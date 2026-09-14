@@ -108,7 +108,13 @@ app.get(/.*/, (req, res) => {
   res.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
   res.set("Pragma", "no-cache");
   res.set("Expires", "0");
-  res.sendFile(path.join(__dirname, "index.html"));
+  const file = require("fs").readFileSync(path.join(__dirname, "index.html"), "utf8");
+  const polish = `<style>
+.response-actions > .response-action { display:none !important; }
+.response-actions > .more-wrap { display:inline-flex !important; }
+.message-actions { display:none !important; }
+</style>`;
+  res.type("html").send(file.replace("</head>", polish + "</head>"));
 });
 
 app.listen(PORT, "0.0.0.0", () => console.log(`Thinkora AI running on port ${PORT}`));
