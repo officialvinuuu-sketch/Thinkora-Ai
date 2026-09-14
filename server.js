@@ -1,14 +1,22 @@
 const express = require("express");
 const path = require("path");
+const OpenAI = require("openai");
 
 const app = express();
 const PORT = process.env.PORT || 10000;
 
 app.use(express.json({ limit: "2mb" }));
 
-// Existing Thinkora AI frontend ko serve karega
+// Thinkora AI frontend
 app.use(express.static(path.join(__dirname)));
 
+// Hugging Face AI
+const hf = new OpenAI({
+  baseURL: "https://router.huggingface.co/v1",
+  apiKey: process.env.HF_TOKEN
+});
+
+// Health check
 app.get("/api/health", (req, res) => {
   res.json({
     status: "ok",
@@ -17,9 +25,8 @@ app.get("/api/health", (req, res) => {
   });
 });
 
-// Temporary AI endpoint.
-// AI model hum next stage mein securely connect karenge.
-app.post("/api/chat", (req, res) => {
+// AI chat
+app.post("/api/chat", async (req, res) => {
   const message = req.body?.message;
 
   if (!message) {
@@ -28,12 +35,37 @@ app.post("/api/chat", (req, res) => {
     });
   }
 
-  res.json({
-    reply:
-      "Thinkora AI backend is connected. AI model integration is the next step."
-  });
+  try {
+    const completion = await hf.chat.completions.create({
+      model: "openai/gpt-oss-120b:fastest",
+      messages: [
+        {
+          role: "system",
+          content:
+            "You are Thinkora AI, a helpful, professional and intelligent AI assistant. Give clear, accurate and useful answers."
+        },
+        {
+          role: "user",
+          content: message
+        }
+      ]
+    });
+
+    const reply = completion.choices?.[0]?.message?.content;
+
+    res.json({
+      reply: reply || "I could not generate a response."
+    });
+  } catch (error) {
+    console.error("Thinkora AI error:", error);
+
+    res.status(500).json({
+      error: "Thinkora AI could not process your request right now."
+    });
+  }
 });
 
+// Serve frontend
 app.get(/.*/, (req, res) => {
   res.sendFile(path.join(__dirname, "index.html"));
 });
