@@ -242,7 +242,7 @@ function addMessage(type, text) {
   chat.scrollTop = chat.scrollHeight;
 }
 
-let conversationHistory = [];
+let conversationHistory = JSON.parse(localStorage.getItem("thinkoraHistory") || "[]");
 
 async function sendMessage() {
 
@@ -292,6 +292,7 @@ async function sendMessage() {
           role: "assistant",
           content: reply
         });
+        localStorage.setItem("thinkoraHistory", JSON.stringify(conversationHistory));
       }
     }
 
