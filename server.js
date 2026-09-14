@@ -15,6 +15,12 @@ const hf = new OpenAI({
   apiKey: process.env.HF_TOKEN
 });
 
+let pdfjsPromise;
+async function getPdfJs() {
+  if (!pdfjsPromise) pdfjsPromise = import("pdfjs-dist/legacy/build/pdf.mjs");
+  return pdfjsPromise;
+}
+
 const documentUpload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 8 * 1024 * 1024, files: 1 },
@@ -37,6 +43,50 @@ const imageUpload = multer({
 
 const SYSTEM_PROMPT = "You are Thinkora AI, a professional, helpful and intelligent AI assistant. Answer clearly, accurately and naturally. Your identity is Thinkora AI. Never claim to be ChatGPT or another company's AI. If you do not know something, say so rather than inventing facts.";
 
+async function extractScannedPdfText(buffer, originalName) {
+  const pdfjsLib = await getPdfJs();
+  const { createCanvas } = require("@napi-rs/canvas");
+  const loadingTask = pdfjsLib.getDocument({ data: new Uint8Array(buffer), disableWorker: true });
+  const pdf = await loadingTask.promise;
+  const pageCount = Math.min(pdf.numPages, 5);
+  const parts = [];
+
+  for (let pageNumber = 1; pageNumber <= pageCount; pageNumber++) {
+    const page = await pdf.getPage(pageNumber);
+    const baseViewport = page.getViewport({ scale: 1 });
+    const maxWidth = 1400;
+    const scale = Math.min(1.8, maxWidth / Math.max(baseViewport.width, 1));
+    const viewport = page.getViewport({ scale });
+    const canvas = createCanvas(Math.ceil(viewport.width), Math.ceil(viewport.height));
+    const context = canvas.getContext("2d");
+    await page.render({ canvasContext: context, viewport }).promise;
+    const imageData = canvas.toDataURL("image/jpeg", 0.82);
+
+    const completion = await hf.chat.completions.create({
+      model: "zai-org/GLM-4.5V:fastest",
+      messages: [
+        {
+          role: "system",
+          content: "You are Thinkora AI document OCR. Read the supplied PDF page carefully. Transcribe all useful visible text, preserving headings, numbers, lists and table information as accurately as possible. Do not describe the image unless needed to explain unreadable content. If text is unclear, mark it as [unclear] rather than inventing it."
+        },
+        {
+          role: "user",
+          content: [
+            { type: "text", text: `Extract the text from page ${pageNumber} of the PDF named ${originalName}.` },
+            { type: "image_url", image_url: { url: imageData, detail: "high" } }
+          ]
+        }
+      ],
+      max_tokens: 1800
+    });
+
+    const text = completion.choices?.[0]?.message?.content;
+    if (text) parts.push(`\n--- PAGE ${pageNumber} ---\n${text}`);
+  }
+
+  return { text: parts.join("\n").trim(), pagesRead: pageCount, totalPages: pdf.numPages };
+}
+
 app.get("/api/health", (req, res) => {
   res.json({ status: "ok", app: "Thinkora AI", developer: "INNOCENT VINUU" });
 });
@@ -49,10 +99,19 @@ app.post("/api/files", documentUpload.single("file"), async (req, res) => {
     if (req.file.mimetype === "application/pdf" || ext === ".pdf") {
       const parsed = await pdfParse(req.file.buffer);
       text = parsed.text || "";
+      text = text.replace(/\u0000/g, "").trim();
+
+      if (!text) {
+        console.log(`Thinkora PDF OCR fallback: ${req.file.originalname}`);
+        const ocr = await extractScannedPdfText(req.file.buffer, req.file.originalname);
+        text = ocr.text;
+        if (!text) return res.status(422).json({ error: "Thinkora AI could not find readable text in this PDF." });
+        const maxChars = 80000;
+        return res.json({ name: req.file.originalname, type: req.file.mimetype, text: text.slice(0, maxChars), truncated: text.length > maxChars, ocr: true, pagesRead: ocr.pagesRead, totalPages: ocr.totalPages });
+      }
     } else {
-      text = req.file.buffer.toString("utf8");
+      text = req.file.buffer.toString("utf8").replace(/\u0000/g, "").trim();
     }
-    text = text.replace(/\u0000/g, "").trim();
     const maxChars = 80000;
     res.json({ name: req.file.originalname, type: req.file.mimetype, text: text.slice(0, maxChars), truncated: text.length > maxChars });
   } catch (error) {
