@@ -1,5 +1,6 @@
 const express = require("express");
 const path = require("path");
+const fs = require("fs");
 const multer = require("multer");
 const pdfParse = require("pdf-parse");
 const OpenAI = require("openai");
@@ -105,7 +106,9 @@ app.post("/api/chat", async (req, res) => {
 });
 
 app.get(/.*/, (req, res) => {
-  res.sendFile(path.join(__dirname, "index.html"));
+  const file = fs.readFileSync(path.join(__dirname, "index.html"), "utf8");
+  const polish = `<style id="thinkora-sidebar-polish">.sidebar-head{display:flex;align-items:center;justify-content:space-between}.sidebar-close{display:none;border:0;background:transparent;color:#aaa;font-size:22px;padding:6px;border-radius:8px}.sidebar-close:hover{background:#303030;color:#fff}.chat-search{width:100%;height:38px;border:1px solid #3d3d3d;border-radius:9px;background:#242424;color:#eee;outline:0;padding:0 11px;font-size:12px;margin-top:10px}.chat-search:focus{border-color:#666}.chat-search::placeholder{color:#777}.history-empty{color:#666;font-size:12px;padding:14px 9px}.new-chat{transition:background .15s,border-color .15s}.new-chat:active{transform:scale(.99)}@media(max-width:800px){.sidebar-head{padding-right:2px}.sidebar-close{display:block}}</style><script>(function(){const s=document.getElementById('sidebar'),brand=s&&s.querySelector('.brand'),newChat=document.getElementById('newChat'),history=document.getElementById('history');if(!s||!brand||!newChat||!history)return;const head=document.createElement('div');head.className='sidebar-head';brand.parentNode.insertBefore(head,brand);head.appendChild(brand);const close=document.createElement('button');close.className='sidebar-close';close.setAttribute('aria-label','Close sidebar');close.textContent='×';head.appendChild(close);const search=document.createElement('input');search.className='chat-search';search.type='search';search.placeholder='Search chats';search.setAttribute('aria-label','Search chats');newChat.parentNode.insertBefore(search,newChat.nextSibling);const originalRender=window.renderHistory;function filter(){const q=search.value.trim().toLowerCase();let count=0;history.querySelectorAll('.history-item').forEach(b=>{const show=!q||b.textContent.toLowerCase().includes(q);b.style.display=show?'':'none';if(show)count++});let empty=history.querySelector('.history-empty');if(q&&!count){if(!empty){empty=document.createElement('div');empty.className='history-empty';history.appendChild(empty)}empty.textContent='No matching chats';}else if(empty)empty.remove();}search.addEventListener('input',filter);close.addEventListener('click',function(){s.classList.remove('open');const o=document.getElementById('overlay');if(o)o.classList.remove('show')});if(originalRender){const wrapped=function(){originalRender();filter()};window.renderHistory=wrapped;}setTimeout(filter,0);})();</script>`;
+  res.type("html").send(file.replace("</body>", polish + "</body>"));
 });
 
 app.listen(PORT, "0.0.0.0", () => console.log(`Thinkora AI running on port ${PORT}`));
