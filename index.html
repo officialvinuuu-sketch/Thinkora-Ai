@@ -46,13 +46,30 @@
     .code-wrap pre { margin: 0; padding: 13px; overflow-x: auto; white-space: pre; }
     .code-wrap code { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 13px; line-height: 1.5; }
     .content a { color: #9ecbff; text-decoration: underline; }
+
     .input-area { padding: 12px 15px; background: #212121; }
-    .input-box { max-width: 850px; margin: auto; display: flex; align-items: flex-end; background: #2f2f2f; border: 1px solid #555; border-radius: 15px; padding: 7px; }
+    .composer { max-width: 850px; margin: auto; position: relative; display: flex; flex-direction: column; align-items: center; }
+    .plus-menu { width: min(360px, calc(100vw - 40px)); margin-bottom: 10px; border: 1px solid #555; border-radius: 16px; background: #202020; box-shadow: 0 12px 35px rgba(0,0,0,.45); overflow: hidden; display: none; }
+    .plus-menu.open { display: block; }
+    .plus-option { width: 100%; display: flex; align-items: center; gap: 14px; padding: 14px 16px; border: 0; border-bottom: 1px solid #383838; background: transparent; color: white; text-align: left; cursor: pointer; }
+    .plus-option:last-child { border-bottom: 0; }
+    .plus-option:hover { background: #2d2d2d; }
+    .plus-icon { width: 40px; height: 40px; min-width: 40px; border-radius: 50%; background: #303030; border: 1px solid #444; display: flex; align-items: center; justify-content: center; font-size: 20px; }
+    .plus-label { display: flex; flex-direction: column; gap: 3px; }
+    .plus-label strong { font-size: 15px; font-weight: 500; }
+    .plus-label span { color: #999; font-size: 12px; }
+    .file-input { display: none; }
+    .plus-button { width: 48px; height: 48px; margin-bottom: 9px; border: 1px solid #555; border-radius: 50%; background: #303030; color: white; font-size: 27px; line-height: 1; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+    .plus-button:hover { background: #3a3a3a; }
+    .input-box { width: 100%; display: flex; align-items: flex-end; background: #2f2f2f; border: 1px solid #555; border-radius: 15px; padding: 7px; }
     textarea { flex: 1; resize: none; border: none; outline: none; background: transparent; color: white; padding: 12px; font-size: 16px; max-height: 150px; }
     .send-button { width: 42px; height: 42px; border: none; border-radius: 10px; background: white; color: black; font-size: 20px; cursor: pointer; }
     .send-button:hover { opacity: .8; }
+    .selected-file { width: 100%; margin-bottom: 8px; padding: 8px 12px; border: 1px solid #444; border-radius: 10px; background: #292929; color: #ddd; font-size: 12px; display: none; }
+    .selected-file.show { display: block; }
     .credit { text-align: center; color: #777; font-size: 11px; line-height: 1.7; padding: 8px; }
     .overlay { display: none; }
+
     @media (max-width: 800px) {
       .sidebar { position: fixed; left: 0; top: 0; bottom: 0; transform: translateX(-100%); box-shadow: 8px 0 30px rgba(0,0,0,.35); }
       .sidebar.open { transform: translateX(0); }
@@ -62,6 +79,7 @@
       .header { padding: 0 12px; font-size: 18px; }
       .chat { padding: 20px 15px; }
       .welcome h1 { font-size: 28px; }
+      .plus-menu { width: calc(100vw - 40px); }
     }
   </style>
 </head>
@@ -73,33 +91,72 @@
     <div class="history-list" id="historyList"></div>
     <div class="sidebar-footer">Thinkora AI<br>AI Assistant by INNOCENT VINUU</div>
   </aside>
+
   <div class="overlay" id="overlay" onclick="closeSidebar()"></div>
+
   <section class="main">
     <header class="header">
       <button class="menu-button" onclick="toggleSidebar()" aria-label="Open menu">☰</button>
       <span class="logo">✦ Thinkora AI</span>
       <span class="badge">AI Assistant</span>
     </header>
+
     <main class="chat" id="chat">
       <div class="welcome" id="welcome"><h1>How can I help you?</h1><p>Ask Thinkora anything.</p></div>
     </main>
+
     <div class="input-area">
-      <div class="input-box">
-        <textarea id="messageInput" rows="1" placeholder="Message Thinkora AI..."></textarea>
-        <button class="send-button" onclick="sendMessage()" aria-label="Send">↑</button>
+      <div class="composer">
+        <div class="plus-menu" id="plusMenu">
+          <button class="plus-option" type="button" onclick="openFilePicker()">
+            <span class="plus-icon">📄</span>
+            <span class="plus-label"><strong>Upload file</strong><span>PDF, DOC, TXT, CSV, JSON</span></span>
+          </button>
+          <button class="plus-option" type="button" onclick="openCameraPicker()">
+            <span class="plus-icon">📷</span>
+            <span class="plus-label"><strong>Take photo</strong><span>Use camera</span></span>
+          </button>
+          <button class="plus-option" type="button" onclick="openGalleryPicker()">
+            <span class="plus-icon">🖼️</span>
+            <span class="plus-label"><strong>Choose from gallery</strong><span>Photos &amp; videos</span></span>
+          </button>
+        </div>
+
+        <div class="selected-file" id="selectedFile"></div>
+
+        <button class="plus-button" id="plusButton" type="button" onclick="togglePlusMenu()" aria-label="Open attachment menu" aria-expanded="false">+</button>
+
+        <input class="file-input" id="filePicker" type="file" accept=".pdf,.doc,.docx,.txt,.csv,.json,.md">
+        <input class="file-input" id="cameraPicker" type="file" accept="image/*" capture="environment">
+        <input class="file-input" id="galleryPicker" type="file" accept="image/*,video/*">
+
+        <div class="input-box">
+          <textarea id="messageInput" rows="1" placeholder="Message Thinkora AI..."></textarea>
+          <button class="send-button" onclick="sendMessage()" aria-label="Send">↑</button>
+        </div>
       </div>
+
       <div class="credit">DEVELOPER: INNOCENT VINUU<br>© INNOCENT VINUU — Thinkora AI. All Rights Reserved.</div>
     </div>
   </section>
 </div>
+
 <script>
 const input = document.getElementById("messageInput");
 const chat = document.getElementById("chat");
 const sidebar = document.getElementById("sidebar");
 const overlay = document.getElementById("overlay");
 const historyList = document.getElementById("historyList");
+const plusMenu = document.getElementById("plusMenu");
+const plusButton = document.getElementById("plusButton");
+const selectedFile = document.getElementById("selectedFile");
+const filePicker = document.getElementById("filePicker");
+const cameraPicker = document.getElementById("cameraPicker");
+const galleryPicker = document.getElementById("galleryPicker");
+
 let chats = JSON.parse(localStorage.getItem("thinkoraChats") || "[]");
 let currentChatId = localStorage.getItem("thinkoraCurrentChat") || null;
+let pendingFile = null;
 
 if (!chats.length) {
   const oldHistory = JSON.parse(localStorage.getItem("thinkoraHistory") || "[]");
@@ -109,6 +166,7 @@ if (!chats.length) {
     saveChats();
   }
 }
+
 function saveChats() {
   localStorage.setItem("thinkoraChats", JSON.stringify(chats));
   if (currentChatId) localStorage.setItem("thinkoraCurrentChat", currentChatId);
@@ -142,6 +200,7 @@ function ensureCurrentChat(firstMessage) {
   const item = { id: Date.now().toString(), title: firstMessage.slice(0, 40) || "New chat", messages: [] };
   chats.push(item); currentChatId = item.id; saveChats(); renderHistory(); return item;
 }
+
 function addTextWithInlineMarkdown(parent, text) {
   const pattern = /(\*\*([^*]+)\*\*|__([^_]+)__|\*([^*]+)\*|_([^_]+)_|`([^`]+)`|\[([^\]]+)\]\((https?:\/\/[^\s)]+)\))/g;
   let last = 0, match;
@@ -211,19 +270,52 @@ function addMessage(type, text) {
   if (type === "assistant") renderMarkdown(content, text); else content.textContent = text;
   message.append(avatar, content); chat.appendChild(message); chat.scrollTop = chat.scrollHeight;
 }
+
+function togglePlusMenu() {
+  const open = plusMenu.classList.toggle("open");
+  plusButton.textContent = open ? "×" : "+";
+  plusButton.setAttribute("aria-expanded", String(open));
+}
+function closePlusMenu() {
+  plusMenu.classList.remove("open");
+  plusButton.textContent = "+";
+  plusButton.setAttribute("aria-expanded", "false");
+}
+function openFilePicker() { closePlusMenu(); filePicker.click(); }
+function openCameraPicker() { closePlusMenu(); cameraPicker.click(); }
+function openGalleryPicker() { closePlusMenu(); galleryPicker.click(); }
+function showSelectedFile(file) {
+  if (!file) return;
+  pendingFile = file;
+  selectedFile.textContent = "Attached: " + file.name;
+  selectedFile.classList.add("show");
+}
+filePicker.addEventListener("change", e => showSelectedFile(e.target.files[0]));
+cameraPicker.addEventListener("change", e => showSelectedFile(e.target.files[0]));
+galleryPicker.addEventListener("change", e => showSelectedFile(e.target.files[0]));
+
 input.addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } });
 async function sendMessage() {
-  const text = input.value.trim(); if (!text) return;
-  const current = ensureCurrentChat(text); addMessage("user", text); input.value = ""; addMessage("assistant", "Thinking...");
+  const text = input.value.trim(); if (!text && !pendingFile) return;
+  const messageText = text || "Please analyze the attached file.";
+  const current = ensureCurrentChat(messageText);
+  addMessage("user", pendingFile ? messageText + "\n📎 " + pendingFile.name : messageText);
+  input.value = "";
+  closePlusMenu();
+  addMessage("assistant", "Thinking...");
   try {
-    const response = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message: text, messages: current.messages }) });
+    const response = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message: messageText, messages: current.messages }) });
     const data = await response.json(); const messages = chat.querySelectorAll(".message"); const last = messages[messages.length - 1]; const content = last ? last.querySelector(".content") : null;
     const reply = data.reply || data.error || "Something went wrong."; if (content) renderMarkdown(content, reply);
-    current.messages.push({ role: "user", content: text }); current.messages.push({ role: "assistant", content: reply }); saveChats(); renderHistory();
+    current.messages.push({ role: "user", content: messageText }); current.messages.push({ role: "assistant", content: reply }); saveChats(); renderHistory();
   } catch {
     const messages = chat.querySelectorAll(".message"); const last = messages[messages.length - 1]; const content = last ? last.querySelector(".content") : null;
     if (content) content.textContent = "Unable to connect to Thinkora AI server.";
   }
+  pendingFile = null;
+  selectedFile.textContent = "";
+  selectedFile.classList.remove("show");
+  filePicker.value = ""; cameraPicker.value = ""; galleryPicker.value = "";
 }
 function toggleSidebar() { sidebar.classList.toggle("open"); overlay.classList.toggle("show"); }
 function closeSidebar() { sidebar.classList.remove("open"); overlay.classList.remove("show"); }
