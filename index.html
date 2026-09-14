@@ -242,24 +242,50 @@ function addMessage(type, text) {
   chat.scrollTop = chat.scrollHeight;
 }
 
-function sendMessage() {
-
+async function sendMessage() {
   const text = input.value.trim();
 
   if (!text) return;
 
   addMessage("user", text);
-
   input.value = "";
 
-  setTimeout(function() {
+  addMessage("assistant", "Thinking...");
 
-    addMessage(
-      "assistant",
-      "Hello! 👋 I am Thinkora AI.\n\nAI brain will be connected in the next step."
-    );
+  try {
+    const response = await fetch("/api/chat", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        message: text
+      })
+    });
 
-  }, 500);
+    const data = await response.json();
+
+    const messages = chat.querySelectorAll(".message");
+    const lastMessage = messages[messages.length - 1];
+
+    if (lastMessage) {
+      const content = lastMessage.querySelector(".content");
+      if (content) {
+        content.textContent =
+          data.reply || data.error || "Something went wrong.";
+      }
+    }
+  } catch (error) {
+    const messages = chat.querySelectorAll(".message");
+    const lastMessage = messages[messages.length - 1];
+
+    if (lastMessage) {
+      const content = lastMessage.querySelector(".content");
+      if (content) {
+        content.textContent = "Unable to connect to Thinkora AI server.";
+      }
+    }
+  }
 }
 
 </script>
