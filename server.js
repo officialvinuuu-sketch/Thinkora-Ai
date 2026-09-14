@@ -19,8 +19,10 @@ const documentUpload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 8 * 1024 * 1024, files: 1 },
   fileFilter: (req, file, cb) => {
-    const allowed = ["application/pdf", "text/plain", "text/markdown", "text/csv", "application/json"];
-    cb(null, allowed.includes(file.mimetype));
+    const allowedMime = ["application/pdf", "text/plain", "text/markdown", "text/csv", "application/json", "application/octet-stream"];
+    const allowedExt = [".pdf", ".txt", ".md", ".csv", ".json"];
+    const ext = path.extname(file.originalname || "").toLowerCase();
+    cb(null, allowedMime.includes(file.mimetype) || allowedExt.includes(ext));
   }
 });
 
@@ -43,7 +45,8 @@ app.post("/api/files", documentUpload.single("file"), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: "Please upload a PDF, TXT, MD, CSV, or JSON file." });
   try {
     let text = "";
-    if (req.file.mimetype === "application/pdf") {
+    const ext = path.extname(req.file.originalname || "").toLowerCase();
+    if (req.file.mimetype === "application/pdf" || ext === ".pdf") {
       const parsed = await pdfParse(req.file.buffer);
       text = parsed.text || "";
     } else {
