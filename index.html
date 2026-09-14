@@ -3,502 +3,232 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
   <title>Thinkora AI</title>
-
   <style>
     * { box-sizing: border-box; }
-
-    body {
-      margin: 0;
-      font-family: Arial, sans-serif;
-      background: #212121;
-      color: white;
-      height: 100vh;
-      overflow: hidden;
-    }
-
-    .app {
-      height: 100vh;
-      display: flex;
-    }
-
-    .sidebar {
-      width: 260px;
-      min-width: 260px;
-      background: #171717;
-      border-right: 1px solid #303030;
-      display: flex;
-      flex-direction: column;
-      padding: 12px;
-      transition: transform 0.2s ease;
-      z-index: 20;
-    }
-
-    .new-chat {
-      width: 100%;
-      height: 44px;
-      border: 1px solid #444;
-      border-radius: 10px;
-      background: #2f2f2f;
-      color: white;
-      font-size: 14px;
-      cursor: pointer;
-      text-align: left;
-      padding: 0 14px;
-    }
-
+    body { margin: 0; font-family: Arial, sans-serif; background: #212121; color: white; height: 100vh; overflow: hidden; }
+    .app { height: 100vh; display: flex; }
+    .sidebar { width: 260px; min-width: 260px; background: #171717; border-right: 1px solid #303030; display: flex; flex-direction: column; padding: 12px; transition: transform .2s ease; z-index: 20; }
+    .new-chat { width: 100%; height: 44px; border: 1px solid #444; border-radius: 10px; background: #2f2f2f; color: white; font-size: 14px; cursor: pointer; text-align: left; padding: 0 14px; }
     .new-chat:hover { background: #383838; }
-
-    .history-title {
-      color: #888;
-      font-size: 12px;
-      margin: 18px 8px 8px;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-    }
-
-    .history-list {
-      flex: 1;
-      overflow-y: auto;
-    }
-
-    .history-item {
-      width: 100%;
-      border: 0;
-      border-radius: 8px;
-      background: transparent;
-      color: #ddd;
-      padding: 11px 10px;
-      margin-bottom: 3px;
-      text-align: left;
-      cursor: pointer;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      font-size: 13px;
-    }
-
+    .history-title { color: #888; font-size: 12px; margin: 18px 8px 8px; text-transform: uppercase; letter-spacing: .5px; }
+    .history-list { flex: 1; overflow-y: auto; }
+    .history-item { width: 100%; border: 0; border-radius: 8px; background: transparent; color: #ddd; padding: 11px 10px; margin-bottom: 3px; text-align: left; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 13px; }
     .history-item:hover { background: #2a2a2a; }
     .history-item.active { background: #303030; color: white; }
-
-    .sidebar-footer {
-      border-top: 1px solid #303030;
-      padding-top: 10px;
-      color: #777;
-      font-size: 11px;
-      line-height: 1.5;
-    }
-
-    .main {
-      flex: 1;
-      min-width: 0;
-      height: 100vh;
-      display: flex;
-      flex-direction: column;
-    }
-
-    .header {
-      height: 60px;
-      min-height: 60px;
-      display: flex;
-      align-items: center;
-      padding: 0 20px;
-      border-bottom: 1px solid #3a3a3a;
-      background: #171717;
-      font-size: 20px;
-      font-weight: bold;
-    }
-
-    .menu-button {
-      display: none;
-      width: 38px;
-      height: 38px;
-      margin-right: 10px;
-      border: 1px solid #444;
-      border-radius: 9px;
-      background: #2f2f2f;
-      color: white;
-      font-size: 20px;
-      cursor: pointer;
-    }
-
+    .sidebar-footer { border-top: 1px solid #303030; padding-top: 10px; color: #777; font-size: 11px; line-height: 1.5; }
+    .main { flex: 1; min-width: 0; height: 100vh; display: flex; flex-direction: column; }
+    .header { height: 60px; min-height: 60px; display: flex; align-items: center; padding: 0 20px; border-bottom: 1px solid #3a3a3a; background: #171717; font-size: 20px; font-weight: bold; }
+    .menu-button { display: none; width: 38px; height: 38px; margin-right: 10px; border: 1px solid #444; border-radius: 9px; background: #2f2f2f; color: white; font-size: 20px; cursor: pointer; }
     .logo { margin-right: 10px; }
-
-    .badge {
-      font-size: 11px;
-      color: #aaa;
-      font-weight: normal;
-    }
-
-    .chat {
-      flex: 1;
-      overflow-y: auto;
-      padding: 25px 15%;
-    }
-
-    .welcome {
-      text-align: center;
-      margin-top: 20vh;
-    }
-
-    .welcome h1 {
-      font-size: 34px;
-      margin-bottom: 10px;
-    }
-
+    .badge { font-size: 11px; color: #aaa; font-weight: normal; }
+    .chat { flex: 1; overflow-y: auto; padding: 25px 15%; }
+    .welcome { text-align: center; margin-top: 20vh; }
+    .welcome h1 { font-size: 34px; margin-bottom: 10px; }
     .welcome p { color: #999; }
-
-    .message {
-      display: flex;
-      gap: 14px;
-      margin-bottom: 25px;
-      line-height: 1.6;
-    }
-
-    .avatar {
-      width: 34px;
-      height: 34px;
-      min-width: 34px;
-      border-radius: 50%;
-      background: #444;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-weight: bold;
-    }
-
+    .message { display: flex; gap: 14px; margin-bottom: 25px; line-height: 1.6; }
+    .avatar { width: 34px; height: 34px; min-width: 34px; border-radius: 50%; background: #444; display: flex; align-items: center; justify-content: center; font-weight: bold; }
     .user .avatar { background: #666; }
-
-    .content {
-      max-width: 800px;
-      white-space: pre-wrap;
-      word-break: break-word;
-    }
-
-    .input-area {
-      padding: 12px 15px;
-      background: #212121;
-    }
-
-    .input-box {
-      max-width: 850px;
-      margin: auto;
-      display: flex;
-      align-items: flex-end;
-      background: #2f2f2f;
-      border: 1px solid #555;
-      border-radius: 15px;
-      padding: 7px;
-    }
-
-    textarea {
-      flex: 1;
-      resize: none;
-      border: none;
-      outline: none;
-      background: transparent;
-      color: white;
-      padding: 12px;
-      font-size: 16px;
-      max-height: 150px;
-    }
-
-    .send-button {
-      width: 42px;
-      height: 42px;
-      border: none;
-      border-radius: 10px;
-      background: white;
-      color: black;
-      font-size: 20px;
-      cursor: pointer;
-    }
-
-    .send-button:hover { opacity: 0.8; }
-
-    .credit {
-      text-align: center;
-      color: #777;
-      font-size: 11px;
-      line-height: 1.7;
-      padding: 8px;
-    }
-
-    .overlay {
-      display: none;
-    }
-
+    .content { max-width: 800px; word-break: break-word; }
+    .content p { margin: 0 0 12px; }
+    .content p:last-child { margin-bottom: 0; }
+    .content h1, .content h2, .content h3 { margin: 0 0 12px; line-height: 1.3; }
+    .content h1 { font-size: 24px; }
+    .content h2 { font-size: 21px; }
+    .content h3 { font-size: 18px; }
+    .content ul, .content ol { margin: 6px 0 12px; padding-left: 24px; }
+    .content li { margin: 4px 0; }
+    .content blockquote { margin: 10px 0; padding-left: 14px; border-left: 3px solid #666; color: #bbb; }
+    .inline-code { background: #303030; border: 1px solid #444; border-radius: 5px; padding: 2px 5px; font-family: monospace; font-size: .92em; }
+    .code-wrap { margin: 12px 0; border: 1px solid #444; border-radius: 9px; overflow: hidden; background: #111; }
+    .code-header { display: flex; justify-content: space-between; align-items: center; padding: 7px 10px; background: #2a2a2a; color: #aaa; font-size: 11px; }
+    .copy-code { width: auto; height: 28px; padding: 0 9px; border: 1px solid #555; border-radius: 6px; background: #333; color: #eee; font-size: 11px; cursor: pointer; }
+    .code-wrap pre { margin: 0; padding: 13px; overflow-x: auto; white-space: pre; }
+    .code-wrap code { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 13px; line-height: 1.5; }
+    .content a { color: #9ecbff; text-decoration: underline; }
+    .input-area { padding: 12px 15px; background: #212121; }
+    .input-box { max-width: 850px; margin: auto; display: flex; align-items: flex-end; background: #2f2f2f; border: 1px solid #555; border-radius: 15px; padding: 7px; }
+    textarea { flex: 1; resize: none; border: none; outline: none; background: transparent; color: white; padding: 12px; font-size: 16px; max-height: 150px; }
+    .send-button { width: 42px; height: 42px; border: none; border-radius: 10px; background: white; color: black; font-size: 20px; cursor: pointer; }
+    .send-button:hover { opacity: .8; }
+    .credit { text-align: center; color: #777; font-size: 11px; line-height: 1.7; padding: 8px; }
+    .overlay { display: none; }
     @media (max-width: 800px) {
-      .sidebar {
-        position: fixed;
-        left: 0;
-        top: 0;
-        bottom: 0;
-        transform: translateX(-100%);
-        box-shadow: 8px 0 30px rgba(0, 0, 0, 0.35);
-      }
-
+      .sidebar { position: fixed; left: 0; top: 0; bottom: 0; transform: translateX(-100%); box-shadow: 8px 0 30px rgba(0,0,0,.35); }
       .sidebar.open { transform: translateX(0); }
-
-      .overlay {
-        position: fixed;
-        inset: 0;
-        background: rgba(0, 0, 0, 0.55);
-        z-index: 10;
-      }
-
+      .overlay { position: fixed; inset: 0; background: rgba(0,0,0,.55); z-index: 10; }
       .overlay.show { display: block; }
-
       .menu-button { display: block; }
-
       .header { padding: 0 12px; font-size: 18px; }
-
       .chat { padding: 20px 15px; }
-
       .welcome h1 { font-size: 28px; }
     }
   </style>
 </head>
-
 <body>
-
 <div class="app">
-
   <aside class="sidebar" id="sidebar">
     <button class="new-chat" onclick="newChat()">＋ New chat</button>
-
     <div class="history-title">Chats</div>
     <div class="history-list" id="historyList"></div>
-
-    <div class="sidebar-footer">
-      Thinkora AI<br>
-      AI Assistant by INNOCENT VINUU
-    </div>
+    <div class="sidebar-footer">Thinkora AI<br>AI Assistant by INNOCENT VINUU</div>
   </aside>
-
   <div class="overlay" id="overlay" onclick="closeSidebar()"></div>
-
   <section class="main">
-
     <header class="header">
       <button class="menu-button" onclick="toggleSidebar()" aria-label="Open menu">☰</button>
       <span class="logo">✦ Thinkora AI</span>
       <span class="badge">AI Assistant</span>
     </header>
-
     <main class="chat" id="chat">
-      <div class="welcome" id="welcome">
-        <h1>How can I help you?</h1>
-        <p>Ask Thinkora anything.</p>
-      </div>
+      <div class="welcome" id="welcome"><h1>How can I help you?</h1><p>Ask Thinkora anything.</p></div>
     </main>
-
     <div class="input-area">
       <div class="input-box">
-        <textarea
-          id="messageInput"
-          rows="1"
-          placeholder="Message Thinkora AI..."
-        ></textarea>
+        <textarea id="messageInput" rows="1" placeholder="Message Thinkora AI..."></textarea>
         <button class="send-button" onclick="sendMessage()" aria-label="Send">↑</button>
       </div>
-
-      <div class="credit">
-        DEVELOPER: INNOCENT VINUU<br>
-        © INNOCENT VINUU — Thinkora AI. All Rights Reserved.
-      </div>
+      <div class="credit">DEVELOPER: INNOCENT VINUU<br>© INNOCENT VINUU — Thinkora AI. All Rights Reserved.</div>
     </div>
-
   </section>
 </div>
-
 <script>
 const input = document.getElementById("messageInput");
 const chat = document.getElementById("chat");
-const welcome = document.getElementById("welcome");
 const sidebar = document.getElementById("sidebar");
 const overlay = document.getElementById("overlay");
 const historyList = document.getElementById("historyList");
-
 let chats = JSON.parse(localStorage.getItem("thinkoraChats") || "[]");
 let currentChatId = localStorage.getItem("thinkoraCurrentChat") || null;
 
-// Safely migrate the previous single-history format.
 if (!chats.length) {
   const oldHistory = JSON.parse(localStorage.getItem("thinkoraHistory") || "[]");
   if (oldHistory.length) {
-    chats = [{
-      id: Date.now().toString(),
-      title: oldHistory[0]?.content?.slice(0, 40) || "New chat",
-      messages: oldHistory
-    }];
+    chats = [{ id: Date.now().toString(), title: oldHistory[0]?.content?.slice(0, 40) || "New chat", messages: oldHistory }];
     currentChatId = chats[0].id;
     saveChats();
   }
 }
-
 function saveChats() {
   localStorage.setItem("thinkoraChats", JSON.stringify(chats));
-  if (currentChatId) {
-    localStorage.setItem("thinkoraCurrentChat", currentChatId);
-  }
+  if (currentChatId) localStorage.setItem("thinkoraCurrentChat", currentChatId);
 }
-
-function getCurrentChat() {
-  return chats.find(chatItem => chatItem.id === currentChatId) || null;
-}
-
+function getCurrentChat() { return chats.find(c => c.id === currentChatId) || null; }
 function renderHistory() {
   historyList.innerHTML = "";
-
-  [...chats].reverse().forEach(chatItem => {
+  [...chats].reverse().forEach(c => {
     const button = document.createElement("button");
-    button.className = "history-item" + (chatItem.id === currentChatId ? " active" : "");
-    button.textContent = chatItem.title || "New chat";
-    button.onclick = () => loadChat(chatItem.id);
+    button.className = "history-item" + (c.id === currentChatId ? " active" : "");
+    button.textContent = c.title || "New chat";
+    button.onclick = () => loadChat(c.id);
     historyList.appendChild(button);
   });
 }
-
 function clearChatUI() {
-  chat.innerHTML = `
-    <div class="welcome" id="welcome">
-      <h1>How can I help you?</h1>
-      <p>Ask Thinkora anything.</p>
-    </div>
-  `;
+  chat.innerHTML = '<div class="welcome" id="welcome"><h1>How can I help you?</h1><p>Ask Thinkora anything.</p></div>';
 }
-
 function loadChat(id) {
-  const selected = chats.find(chatItem => chatItem.id === id);
+  const selected = chats.find(c => c.id === id);
   if (!selected) return;
-
-  currentChatId = id;
-  saveChats();
-  clearChatUI();
-
-  selected.messages.forEach(message => {
-    addMessage(message.role === "user" ? "user" : "assistant", message.content);
-  });
-
-  renderHistory();
-  closeSidebar();
+  currentChatId = id; saveChats(); clearChatUI();
+  selected.messages.forEach(m => addMessage(m.role === "user" ? "user" : "assistant", m.content));
+  renderHistory(); closeSidebar();
 }
-
 function newChat() {
-  currentChatId = null;
-  localStorage.removeItem("thinkoraCurrentChat");
-  clearChatUI();
-  renderHistory();
-  closeSidebar();
-  input.focus();
+  currentChatId = null; localStorage.removeItem("thinkoraCurrentChat"); clearChatUI(); renderHistory(); closeSidebar(); input.focus();
 }
-
 function ensureCurrentChat(firstMessage) {
   if (currentChatId && getCurrentChat()) return getCurrentChat();
-
-  const newItem = {
-    id: Date.now().toString(),
-    title: firstMessage.slice(0, 40) || "New chat",
-    messages: []
-  };
-
-  chats.push(newItem);
-  currentChatId = newItem.id;
-  saveChats();
-  renderHistory();
-  return newItem;
+  const item = { id: Date.now().toString(), title: firstMessage.slice(0, 40) || "New chat", messages: [] };
+  chats.push(item); currentChatId = item.id; saveChats(); renderHistory(); return item;
 }
-
+function addTextWithInlineMarkdown(parent, text) {
+  const pattern = /(\*\*([^*]+)\*\*|__([^_]+)__|\*([^*]+)\*|_([^_]+)_|`([^`]+)`|\[([^\]]+)\]\((https?:\/\/[^\s)]+)\))/g;
+  let last = 0, match;
+  while ((match = pattern.exec(text)) !== null) {
+    if (match.index > last) parent.appendChild(document.createTextNode(text.slice(last, match.index)));
+    let node;
+    if (match[2] || match[3]) { node = document.createElement("strong"); node.textContent = match[2] || match[3]; }
+    else if (match[4] || match[5]) { node = document.createElement("em"); node.textContent = match[4] || match[5]; }
+    else if (match[6]) { node = document.createElement("code"); node.className = "inline-code"; node.textContent = match[6]; }
+    else { node = document.createElement("a"); node.href = match[8]; node.target = "_blank"; node.rel = "noopener noreferrer"; node.textContent = match[7]; }
+    parent.appendChild(node); last = pattern.lastIndex;
+  }
+  if (last < text.length) parent.appendChild(document.createTextNode(text.slice(last)));
+}
+function renderMarkdown(container, text) {
+  container.innerHTML = "";
+  const lines = String(text || "").replace(/\r/g, "").split("\n");
+  let paragraph = null, list = null, listType = null, quote = null, inCode = false, codeLines = [], codeLang = "";
+  function flushParagraph() { if (paragraph) { container.appendChild(paragraph); paragraph = null; } }
+  function flushList() { if (list) { container.appendChild(list); list = null; listType = null; } }
+  function flushQuote() { if (quote) { container.appendChild(quote); quote = null; } }
+  function addParagraphLine(line) {
+    if (!paragraph) paragraph = document.createElement("p");
+    if (paragraph.childNodes.length) paragraph.appendChild(document.createTextNode(" "));
+    addTextWithInlineMarkdown(paragraph, line);
+  }
+  function addCode() {
+    const wrap = document.createElement("div"); wrap.className = "code-wrap";
+    const header = document.createElement("div"); header.className = "code-header";
+    const label = document.createElement("span"); label.textContent = codeLang || "code";
+    const copy = document.createElement("button"); copy.className = "copy-code"; copy.textContent = "Copy";
+    copy.onclick = async () => { try { await navigator.clipboard.writeText(codeLines.join("\n")); copy.textContent = "Copied!"; setTimeout(() => copy.textContent = "Copy", 1200); } catch { copy.textContent = "Copy failed"; } };
+    header.append(label, copy);
+    const pre = document.createElement("pre"); const code = document.createElement("code"); code.textContent = codeLines.join("\n"); pre.appendChild(code); wrap.append(header, pre); container.appendChild(wrap);
+    codeLines = []; codeLang = "";
+  }
+  for (const line of lines) {
+    if (line.trim().startsWith("```")) {
+      if (!inCode) { flushParagraph(); flushList(); flushQuote(); inCode = true; codeLang = line.trim().slice(3).trim(); }
+      else { inCode = false; addCode(); }
+      continue;
+    }
+    if (inCode) { codeLines.push(line); continue; }
+    if (!line.trim()) { flushParagraph(); flushList(); flushQuote(); continue; }
+    const heading = line.match(/^(#{1,3})\s+(.+)$/);
+    if (heading) { flushParagraph(); flushList(); flushQuote(); const h = document.createElement("h" + heading[1].length); addTextWithInlineMarkdown(h, heading[2]); container.appendChild(h); continue; }
+    const ordered = line.match(/^\s*\d+[.)]\s+(.+)$/);
+    const bullet = line.match(/^\s*[-*+]\s+(.+)$/);
+    if (ordered || bullet) {
+      flushParagraph(); flushQuote(); const type = ordered ? "ol" : "ul";
+      if (!list || listType !== type) { flushList(); list = document.createElement(type); listType = type; }
+      const li = document.createElement("li"); addTextWithInlineMarkdown(li, (ordered || bullet)[1]); list.appendChild(li); continue;
+    }
+    const quoteLine = line.match(/^>\s?(.*)$/);
+    if (quoteLine) { flushParagraph(); flushList(); if (!quote) { quote = document.createElement("blockquote"); container.appendChild(quote); } const p = document.createElement("p"); addTextWithInlineMarkdown(p, quoteLine[1]); quote.appendChild(p); continue; }
+    flushList(); flushQuote(); addParagraphLine(line);
+  }
+  if (inCode) { inCode = false; addCode(); }
+  flushParagraph(); flushList(); flushQuote();
+}
 function addMessage(type, text) {
   const currentWelcome = document.getElementById("welcome");
   if (currentWelcome) currentWelcome.style.display = "none";
-
-  const message = document.createElement("div");
-  message.className = "message " + type;
-
-  const avatar = document.createElement("div");
-  avatar.className = "avatar";
-  avatar.textContent = type === "user" ? "U" : "T";
-
-  const content = document.createElement("div");
-  content.className = "content";
-  content.textContent = text;
-
-  message.appendChild(avatar);
-  message.appendChild(content);
-  chat.appendChild(message);
-  chat.scrollTop = chat.scrollHeight;
+  const message = document.createElement("div"); message.className = "message " + type;
+  const avatar = document.createElement("div"); avatar.className = "avatar"; avatar.textContent = type === "user" ? "U" : "T";
+  const content = document.createElement("div"); content.className = "content";
+  if (type === "assistant") renderMarkdown(content, text); else content.textContent = text;
+  message.append(avatar, content); chat.appendChild(message); chat.scrollTop = chat.scrollHeight;
 }
-
-input.addEventListener("keydown", function(event) {
-  if (event.key === "Enter" && !event.shiftKey) {
-    event.preventDefault();
-    sendMessage();
-  }
-});
-
+input.addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } });
 async function sendMessage() {
-  const text = input.value.trim();
-  if (!text) return;
-
-  const current = ensureCurrentChat(text);
-  addMessage("user", text);
-  input.value = "";
-  addMessage("assistant", "Thinking...");
-
+  const text = input.value.trim(); if (!text) return;
+  const current = ensureCurrentChat(text); addMessage("user", text); input.value = ""; addMessage("assistant", "Thinking...");
   try {
-    const response = await fetch("/api/chat", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        message: text,
-        messages: current.messages
-      })
-    });
-
-    const data = await response.json();
-    const messages = chat.querySelectorAll(".message");
-    const lastMessage = messages[messages.length - 1];
-    const content = lastMessage ? lastMessage.querySelector(".content") : null;
-
-    const reply = data.reply || data.error || "Something went wrong.";
-
-    if (content) content.textContent = reply;
-
-    current.messages.push({ role: "user", content: text });
-    current.messages.push({ role: "assistant", content: reply });
-    saveChats();
-    renderHistory();
-
-  } catch (error) {
-    const messages = chat.querySelectorAll(".message");
-    const lastMessage = messages[messages.length - 1];
-    const content = lastMessage ? lastMessage.querySelector(".content") : null;
-
-    if (content) {
-      content.textContent = "Unable to connect to Thinkora AI server.";
-    }
+    const response = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message: text, messages: current.messages }) });
+    const data = await response.json(); const messages = chat.querySelectorAll(".message"); const last = messages[messages.length - 1]; const content = last ? last.querySelector(".content") : null;
+    const reply = data.reply || data.error || "Something went wrong."; if (content) renderMarkdown(content, reply);
+    current.messages.push({ role: "user", content: text }); current.messages.push({ role: "assistant", content: reply }); saveChats(); renderHistory();
+  } catch {
+    const messages = chat.querySelectorAll(".message"); const last = messages[messages.length - 1]; const content = last ? last.querySelector(".content") : null;
+    if (content) content.textContent = "Unable to connect to Thinkora AI server.";
   }
 }
-
-function toggleSidebar() {
-  sidebar.classList.toggle("open");
-  overlay.classList.toggle("show");
-}
-
-function closeSidebar() {
-  sidebar.classList.remove("open");
-  overlay.classList.remove("show");
-}
-
+function toggleSidebar() { sidebar.classList.toggle("open"); overlay.classList.toggle("show"); }
+function closeSidebar() { sidebar.classList.remove("open"); overlay.classList.remove("show"); }
 renderHistory();
-
-if (currentChatId && getCurrentChat()) {
-  loadChat(currentChatId);
-}
+if (currentChatId && getCurrentChat()) loadChat(currentChatId);
 </script>
-
 </body>
 </html>
