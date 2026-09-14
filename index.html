@@ -242,7 +242,10 @@ function addMessage(type, text) {
   chat.scrollTop = chat.scrollHeight;
 }
 
+let conversationHistory = [];
+
 async function sendMessage() {
+
   const text = input.value.trim();
 
   if (!text) return;
@@ -259,7 +262,8 @@ async function sendMessage() {
         "Content-Type": "application/json"
       },
       body: JSON.stringify({
-        message: text
+        message: text,
+        messages: conversationHistory
       })
     });
 
@@ -270,19 +274,38 @@ async function sendMessage() {
 
     if (lastMessage) {
       const content = lastMessage.querySelector(".content");
+
       if (content) {
-        content.textContent =
-          data.reply || data.error || "Something went wrong.";
+        const reply =
+          data.reply ||
+          data.error ||
+          "Something went wrong.";
+
+        content.textContent = reply;
+
+        conversationHistory.push({
+          role: "user",
+          content: text
+        });
+
+        conversationHistory.push({
+          role: "assistant",
+          content: reply
+        });
       }
     }
+
   } catch (error) {
+
     const messages = chat.querySelectorAll(".message");
     const lastMessage = messages[messages.length - 1];
 
     if (lastMessage) {
       const content = lastMessage.querySelector(".content");
+
       if (content) {
-        content.textContent = "Unable to connect to Thinkora AI server.";
+        content.textContent =
+          "Unable to connect to Thinkora AI server.";
       }
     }
   }
