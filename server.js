@@ -35,6 +35,16 @@ const upload = multer({
   }
 });
 
+// Image uploads are kept in memory only and immediately sent to the vision model.
+const visionUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 6 * 1024 * 1024, files: 1 },
+  fileFilter: (req, file, cb) => {
+    const allowed = ["image/jpeg", "image/png", "image/webp", "image/gif"];
+    cb(null, allowed.includes(file.mimetype));
+  }
+});
+
 app.get("/api/health", (req, res) => {
   res.json({
     status: "ok",
@@ -76,6 +86,53 @@ app.post("/api/files", upload.single("file"), async (req, res) => {
     console.error("Thinkora file error:", error);
     res.status(422).json({
       error: "Thinkora AI could not read this file."
+    });
+  }
+});
+
+// Analyze an uploaded image with a vision-language model.
+app.post("/api/vision", visionUpload.single("image"), async (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({
+      error: "Please upload a JPG, PNG, WEBP, or GIF image."
+    });
+  }
+
+  const prompt = typeof req.body?.prompt === "string" && req.body.prompt.trim()
+    ? req.body.prompt.trim().slice(0, 4000)
+    : "Describe this image clearly and tell me the important details you can see.";
+
+  try {
+    const imageDataUrl = `data:${req.file.mimetype};base64,${req.file.buffer.toString("base64")}`;
+
+    const completion = await hf.chat.completions.create({
+      model: "Qwen/Qwen2.5-VL-3B-Instruct",
+      messages: [
+        {
+          role: "system",
+          content:
+            "You are Thinkora AI. Analyze images carefully and answer the user's question accurately. Do not claim to be ChatGPT or another company's AI. If something is unclear or unreadable, say so instead of guessing."
+        },
+        {
+          role: "user",
+          content: [
+            { type: "text", text: prompt },
+            { type: "image_url", image_url: { url: imageDataUrl } }
+          ]
+        }
+      ]
+    });
+
+    const reply = completion.choices?.[0]?.message?.content;
+
+    res.json({
+      reply: reply || "I could not analyze this image.",
+      name: req.file.originalname
+    });
+  } catch (error) {
+    console.error("Thinkora vision error:", error);
+    res.status(500).json({
+      error: "Thinkora AI could not analyze this image right now."
     });
   }
 });
@@ -132,7 +189,7 @@ app.post("/api/chat", async (req, res) => {
   }
 });
 
-// Inject the file picker into the existing frontend without replacing the UI code.
+// Inject file and image helpers into the existing frontend without replacing the UI code.
 app.get(/.*/, (req, res) => {
   const indexPath = path.join(__dirname, "index.html");
 
@@ -150,6 +207,8 @@ app.get(/.*/, (req, res) => {
   .file-chip.show { display: block; }
   .file-status { color: #888; font-size: 11px; }
   #thinkoraFileInput { display: none; }
+  .vision-preview { display: none; width: 100%; max-height: 180px; object-fit: contain; margin-bottom: 8px; border: 1px solid #444; border-radius: 10px; background: #111; }
+  .vision-preview.show { display: block; }
 </style>
 <script>
 (function() {
@@ -182,16 +241,13 @@ app.get(/.*/, (req, res) => {
   fileInput.addEventListener('change', async () => {
     const file = fileInput.files && fileInput.files[0];
     if (!file) return;
-
     selectedFileContext = '';
     selectedFileName = '';
     chip.textContent = file.name;
     chip.classList.add('show');
     status.textContent = 'Reading…';
-
     const form = new FormData();
     form.append('file', file);
-
     try {
       const response = await fetch('/api/files', { method: 'POST', body: form });
       const data = await response.json();
@@ -206,14 +262,11 @@ app.get(/.*/, (req, res) => {
     }
   });
 
-  // Send the selected document context with the next message, then clear the attachment.
   const originalSend = window.sendMessage;
   window.sendMessage = async function() {
     if (!selectedFileContext) return originalSend();
-
     const text = input.value.trim();
     if (!text) return originalSend();
-
     const fileContext = selectedFileContext;
     const fileName = selectedFileName;
     selectedFileContext = '';
@@ -221,8 +274,6 @@ app.get(/.*/, (req, res) => {
     chip.classList.remove('show');
     status.textContent = '';
     fileInput.value = '';
-
-    // Temporarily pass the document context to the existing chat function through a data attribute.
     input.dataset.thinkoraFileContext = fileContext;
     input.dataset.thinkoraFileName = fileName;
     try { await originalSend(); } finally {
@@ -230,12 +281,95 @@ app.get(/.*/, (req, res) => {
       delete input.dataset.thinkoraFileName;
     }
   };
+
+  // Image understanding helper: camera/gallery images are analyzed by the vision model.
+  const preview = document.createElement('img');
+  preview.className = 'vision-preview';
+  preview.alt = 'Selected image preview';
+  if (box) inputArea.querySelector('.composer')?.insertBefore(preview, box);
+
+  async function analyzeImage(file) {
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      status.textContent = 'Please choose an image.';
+      return;
+    }
+    if (file.size > 6 * 1024 * 1024) {
+      status.textContent = 'Image must be 6 MB or smaller.';
+      return;
+    }
+
+    chip.textContent = file.name;
+    chip.classList.add('show');
+    status.textContent = 'Image ready — ask a question and send it.';
+    preview.src = URL.createObjectURL(file);
+    preview.classList.add('show');
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      input.dataset.thinkoraImageData = reader.result;
+      input.dataset.thinkoraImageName = file.name;
+    };
+    reader.readAsDataURL(file);
+  }
+
+  function bindImagePicker(id) {
+    const picker = document.getElementById(id);
+    if (picker) picker.addEventListener('change', () => {
+      const file = picker.files && picker.files[0];
+      analyzeImage(file);
+    });
+  }
+  bindImagePicker('cameraPicker');
+  bindImagePicker('galleryPicker');
+
+  const previousSend = window.sendMessage;
+  window.sendMessage = async function() {
+    const imageData = input.dataset.thinkoraImageData || '';
+    if (!imageData) return previousSend();
+
+    const text = input.value.trim() || 'Please analyze this image and describe what you can see.';
+    const imageName = input.dataset.thinkoraImageName || 'image';
+    const current = ensureCurrentChat(text);
+    addMessage('user', text + '\n\n📷 ' + imageName);
+    input.value = '';
+    addMessage('assistant', 'Analyzing image…');
+
+    delete input.dataset.thinkoraImageData;
+    delete input.dataset.thinkoraImageName;
+    preview.classList.remove('show');
+    chip.classList.remove('show');
+    status.textContent = '';
+
+    try {
+      const blobResponse = await fetch(imageData);
+      const blob = await blobResponse.blob();
+      const form = new FormData();
+      form.append('image', blob, imageName);
+      form.append('prompt', text);
+      const response = await fetch('/api/vision', { method: 'POST', body: form });
+      const data = await response.json();
+      const messages = chat.querySelectorAll('.message');
+      const last = messages[messages.length - 1];
+      const content = last ? last.querySelector('.content') : null;
+      const reply = data.reply || data.error || 'I could not analyze this image.';
+      if (content) renderMarkdown(content, reply);
+      current.messages.push({ role: 'user', content: text + '\n[Image: ' + imageName + ']' });
+      current.messages.push({ role: 'assistant', content: reply });
+      saveChats();
+      renderHistory();
+    } catch (error) {
+      const messages = chat.querySelectorAll('.message');
+      const last = messages[messages.length - 1];
+      const content = last ? last.querySelector('.content') : null;
+      if (content) content.textContent = 'Unable to analyze the image right now.';
+    }
+  };
 })();
 </script>`;
 
     let output = html.replace('</body>', fileFeature + '\n</body>');
 
-    // The existing sendMessage reads these optional attributes when present.
     const marker = 'const current = ensureCurrentChat(text);';
     const replacement = 'const current = ensureCurrentChat(text);\n  const attachedFileContext = input.dataset.thinkoraFileContext || "";\n  const attachedFileName = input.dataset.thinkoraFileName || "";';
     output = output.replace(marker, replacement);
