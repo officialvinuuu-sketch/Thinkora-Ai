@@ -64,7 +64,7 @@ app.post("/api/vision", imageUpload.single("image"), async (req, res) => {
   try {
     const dataUrl = `data:${req.file.mimetype};base64,${req.file.buffer.toString("base64")}`;
     const completion = await hf.chat.completions.create({
-      model: "Qwen/Qwen2.5-VL-3B-Instruct:fastest",
+      model: "zai-org/GLM-4.5V:fastest",
       messages: [
         { role: "system", content: "You are Thinkora AI with vision. You can inspect the supplied image. Carefully answer the user's question about the image. Describe visible objects, people, text, layout, colors and other relevant details. Never say you cannot view the image when an image is supplied. If something is genuinely unreadable or uncertain, say exactly what is unclear." },
         { role: "user", content: [
