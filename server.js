@@ -9,17 +9,13 @@ const app = express();
 const PORT = process.env.PORT || 10000;
 
 app.use(express.json({ limit: "2mb" }));
-
-// Thinkora AI frontend. HTML is served below so the file-upload UI can be injected safely.
 app.use(express.static(path.join(__dirname), { index: false }));
 
-// Hugging Face AI
 const hf = new OpenAI({
   baseURL: "https://router.huggingface.co/v1",
   apiKey: process.env.HF_TOKEN
 });
 
-// In-memory file uploads: files are processed and discarded after extraction.
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 8 * 1024 * 1024, files: 1 },
@@ -35,7 +31,6 @@ const upload = multer({
   }
 });
 
-// Image uploads are kept in memory only and immediately sent to the vision model.
 const visionUpload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 6 * 1024 * 1024, files: 1 },
@@ -46,24 +41,16 @@ const visionUpload = multer({
 });
 
 app.get("/api/health", (req, res) => {
-  res.json({
-    status: "ok",
-    app: "Thinkora AI",
-    developer: "INNOCENT VINUU"
-  });
+  res.json({ status: "ok", app: "Thinkora AI", developer: "INNOCENT VINUU" });
 });
 
-// Extract text from a PDF or common text-based document.
 app.post("/api/files", upload.single("file"), async (req, res) => {
   if (!req.file) {
-    return res.status(400).json({
-      error: "Please upload a PDF, TXT, MD, CSV, or JSON file."
-    });
+    return res.status(400).json({ error: "Please upload a PDF, TXT, MD, CSV, or JSON file." });
   }
 
   try {
     let text = "";
-
     if (req.file.mimetype === "application/pdf") {
       const parsed = await pdfParse(req.file.buffer);
       text = parsed.text || "";
@@ -72,7 +59,6 @@ app.post("/api/files", upload.single("file"), async (req, res) => {
     }
 
     text = text.replace(/\u0000/g, "").trim();
-
     const maxChars = 80000;
     const truncated = text.length > maxChars;
 
@@ -84,18 +70,13 @@ app.post("/api/files", upload.single("file"), async (req, res) => {
     });
   } catch (error) {
     console.error("Thinkora file error:", error);
-    res.status(422).json({
-      error: "Thinkora AI could not read this file."
-    });
+    res.status(422).json({ error: "Thinkora AI could not read this file." });
   }
 });
 
-// Analyze an uploaded image with a vision-language model.
 app.post("/api/vision", visionUpload.single("image"), async (req, res) => {
   if (!req.file) {
-    return res.status(400).json({
-      error: "Please upload a JPG, PNG, WEBP, or GIF image."
-    });
+    return res.status(400).json({ error: "Please upload a JPG, PNG, WEBP, or GIF image." });
   }
 
   const prompt = typeof req.body?.prompt === "string" && req.body.prompt.trim()
@@ -106,14 +87,11 @@ app.post("/api/vision", visionUpload.single("image"), async (req, res) => {
     const imageDataUrl = `data:${req.file.mimetype};base64,${req.file.buffer.toString("base64")}`;
 
     const completion = await hf.chat.completions.create({
-      // Explicitly use a Hugging Face provider/model confirmed for VLM chat.
-      // This avoids the previous automatic route selecting a text-only response path.
-      model: "zai-org/GLM-5.3-Flash:novita",
+      model: "Qwen/Qwen2.5-VL-3B-Instruct",
       messages: [
         {
           role: "system",
-          content:
-            "You are Thinkora AI. You are a vision-capable AI assistant. Analyze the supplied image carefully and answer the user's question accurately. Do not claim to be ChatGPT or another company's AI. If something is unclear or unreadable, say so instead of guessing."
+          content: "You are Thinkora AI, a vision-capable AI assistant. Analyze the supplied image carefully and answer the user's question accurately. Never claim to be ChatGPT or another company's AI. If something is unclear or unreadable, say so instead of guessing."
         },
         {
           role: "user",
@@ -127,50 +105,30 @@ app.post("/api/vision", visionUpload.single("image"), async (req, res) => {
     });
 
     const reply = completion.choices?.[0]?.message?.content;
-
-    res.json({
-      reply: reply || "I could not analyze this image.",
-      name: req.file.originalname
-    });
+    res.json({ reply: reply || "I could not analyze this image.", name: req.file.originalname });
   } catch (error) {
     console.error("Thinkora vision error:", error);
-    res.status(500).json({
-      error: "Thinkora AI could not analyze this image right now."
-    });
+    res.status(500).json({ error: "Thinkora AI could not analyze this image right now." });
   }
 });
 
-// AI chat with conversation memory and optional uploaded-document context.
 app.post("/api/chat", async (req, res) => {
   const message = req.body?.message;
-  const history = Array.isArray(req.body?.messages)
-    ? req.body.messages
-    : [];
-  const fileContext = typeof req.body?.fileContext === "string"
-    ? req.body.fileContext.slice(0, 80000)
-    : "";
-  const fileName = typeof req.body?.fileName === "string"
-    ? req.body.fileName.slice(0, 200)
-    : "";
+  const history = Array.isArray(req.body?.messages) ? req.body.messages : [];
+  const fileContext = typeof req.body?.fileContext === "string" ? req.body.fileContext.slice(0, 80000) : "";
+  const fileName = typeof req.body?.fileName === "string" ? req.body.fileName.slice(0, 200) : "";
 
-  if (!message) {
-    return res.status(400).json({ error: "Message is required." });
-  }
+  if (!message) return res.status(400).json({ error: "Message is required." });
 
   try {
-    const systemContent =
-      "You are Thinkora AI, a helpful, professional and intelligent AI assistant. Answer clearly, accurately and naturally. Never claim to be ChatGPT or another company's AI. Your identity is Thinkora AI.";
-
+    const systemContent = "You are Thinkora AI, a helpful, professional and intelligent AI assistant. Answer clearly, accurately and naturally. Never claim to be ChatGPT or another company's AI. Your identity is Thinkora AI.";
     const messages = [
       { role: "system", content: systemContent },
       ...history,
-      ...(fileContext
-        ? [{
-            role: "system",
-            content:
-              `The user uploaded a document named ${fileName || "uploaded file"}. Use the document text below when answering questions about it. If the answer is not present in the document, say so clearly.\n\nDOCUMENT TEXT:\n${fileContext}`
-          }]
-        : []),
+      ...(fileContext ? [{
+        role: "system",
+        content: `The user uploaded a document named ${fileName || "uploaded file"}. Use the document text below when answering questions about it. If the answer is not present in the document, say so clearly.\n\nDOCUMENT TEXT:\n${fileContext}`
+      }] : []),
       { role: "user", content: message }
     ];
 
@@ -180,26 +138,18 @@ app.post("/api/chat", async (req, res) => {
     });
 
     const reply = completion.choices?.[0]?.message?.content;
-
-    res.json({
-      reply: reply || "I could not generate a response."
-    });
+    res.json({ reply: reply || "I could not generate a response." });
   } catch (error) {
     console.error("Thinkora AI error:", error);
-    res.status(500).json({
-      error: "Thinkora AI could not process your request right now."
-    });
+    res.status(500).json({ error: "Thinkora AI could not process your request right now." });
   }
 });
 
-// Inject file and image helpers into the existing frontend without replacing the UI code.
 app.get(/.*/, (req, res) => {
   const indexPath = path.join(__dirname, "index.html");
 
   fs.readFile(indexPath, "utf8", (readError, html) => {
-    if (readError) {
-      return res.status(500).send("Thinkora AI frontend could not be loaded.");
-    }
+    if (readError) return res.status(500).send("Thinkora AI frontend could not be loaded.");
 
     const fileFeature = `
 <style>
@@ -238,6 +188,7 @@ app.get(/.*/, (req, res) => {
 
   let selectedFileContext = '';
   let selectedFileName = '';
+  let selectedImageFile = null;
 
   button.addEventListener('click', () => fileInput.click());
 
@@ -285,42 +236,32 @@ app.get(/.*/, (req, res) => {
     }
   };
 
-  // Image understanding helper: camera/gallery images are analyzed by the vision model.
   const preview = document.createElement('img');
   preview.className = 'vision-preview';
   preview.alt = 'Selected image preview';
-  if (box) inputArea.querySelector('.composer')?.insertBefore(preview, box);
+  if (box) box.parentElement.insertBefore(preview, box);
 
-  async function analyzeImage(file) {
-    if (!file) return;
-    if (!file.type.startsWith('image/')) {
-      status.textContent = 'Please choose an image.';
-      return;
-    }
+  function setImageFile(file) {
+    if (!file || !file.type.startsWith('image/')) return;
     if (file.size > 6 * 1024 * 1024) {
+      selectedImageFile = null;
       status.textContent = 'Image must be 6 MB or smaller.';
       return;
     }
-
+    selectedImageFile = file;
     chip.textContent = file.name;
     chip.classList.add('show');
     status.textContent = 'Image ready — ask a question and send it.';
     preview.src = URL.createObjectURL(file);
     preview.classList.add('show');
-
-    const reader = new FileReader();
-    reader.onload = () => {
-      input.dataset.thinkoraImageData = reader.result;
-      input.dataset.thinkoraImageName = file.name;
-    };
-    reader.readAsDataURL(file);
   }
 
   function bindImagePicker(id) {
     const picker = document.getElementById(id);
-    if (picker) picker.addEventListener('change', () => {
+    if (!picker) return;
+    picker.addEventListener('change', () => {
       const file = picker.files && picker.files[0];
-      analyzeImage(file);
+      setImageFile(file);
     });
   }
   bindImagePicker('cameraPicker');
@@ -328,27 +269,23 @@ app.get(/.*/, (req, res) => {
 
   const previousSend = window.sendMessage;
   window.sendMessage = async function() {
-    const imageData = input.dataset.thinkoraImageData || '';
-    if (!imageData) return previousSend();
+    if (!selectedImageFile) return previousSend();
 
+    const file = selectedImageFile;
     const text = input.value.trim() || 'Please analyze this image and describe what you can see.';
-    const imageName = input.dataset.thinkoraImageName || 'image';
     const current = ensureCurrentChat(text);
-    addMessage('user', text + '\n\n📷 ' + imageName);
+    addMessage('user', text + '\n\n📷 ' + file.name);
     input.value = '';
     addMessage('assistant', 'Analyzing image…');
 
-    delete input.dataset.thinkoraImageData;
-    delete input.dataset.thinkoraImageName;
+    selectedImageFile = null;
     preview.classList.remove('show');
     chip.classList.remove('show');
     status.textContent = '';
 
     try {
-      const blobResponse = await fetch(imageData);
-      const blob = await blobResponse.blob();
       const form = new FormData();
-      form.append('image', blob, imageName);
+      form.append('image', file, file.name);
       form.append('prompt', text);
       const response = await fetch('/api/vision', { method: 'POST', body: form });
       const data = await response.json();
@@ -357,7 +294,7 @@ app.get(/.*/, (req, res) => {
       const content = last ? last.querySelector('.content') : null;
       const reply = data.reply || data.error || 'I could not analyze this image.';
       if (content) renderMarkdown(content, reply);
-      current.messages.push({ role: 'user', content: text + '\n[Image: ' + imageName + ']' });
+      current.messages.push({ role: 'user', content: text + '\n[Image: ' + file.name + ']' });
       current.messages.push({ role: 'assistant', content: reply });
       saveChats();
       renderHistory();
