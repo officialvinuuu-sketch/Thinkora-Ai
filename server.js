@@ -25,9 +25,12 @@ app.get("/api/health", (req, res) => {
   });
 });
 
-// AI chat
+// AI chat with conversation memory support
 app.post("/api/chat", async (req, res) => {
   const message = req.body?.message;
+  const history = Array.isArray(req.body?.messages)
+    ? req.body.messages
+    : [];
 
   if (!message) {
     return res.status(400).json({
@@ -36,19 +39,22 @@ app.post("/api/chat", async (req, res) => {
   }
 
   try {
+    const messages = [
+      {
+        role: "system",
+        content:
+          "You are Thinkora AI, a helpful, professional and intelligent AI assistant. Remember and use the conversation context provided to you. Give clear, accurate and useful answers."
+      },
+      ...history,
+      {
+        role: "user",
+        content: message
+      }
+    ];
+
     const completion = await hf.chat.completions.create({
       model: "openai/gpt-oss-120b:fastest",
-      messages: [
-        {
-          role: "system",
-          content:
-            "You are Thinkora AI, a helpful, professional and intelligent AI assistant. Give clear, accurate and useful answers."
-        },
-        {
-          role: "user",
-          content: message
-        }
-      ]
+      messages: messages
     });
 
     const reply = completion.choices?.[0]?.message?.content;
