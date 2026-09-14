@@ -14,6 +14,8 @@
     "openai": "^5.12.2",
     "dotenv": "^16.4.7",
     "multer": "^2.0.2",
-    "pdf-parse": "^1.1.1"
+    "pdf-parse": "^1.1.1",
+    "pdfjs-dist": "^4.10.38",
+    "@napi-rs/canvas": "^0.1.80"
   }
 }
