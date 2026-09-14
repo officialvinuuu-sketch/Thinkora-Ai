@@ -113,7 +113,7 @@ app.get(/.*/, (req, res) => {
 .response-actions > .response-action { display:none !important; }
 .response-actions > .more-wrap { display:inline-flex !important; }
 .message-actions { display:none !important; }
-</style>`;
+</style><script>(function(){function addCopy(){document.querySelectorAll('.more-menu').forEach(function(menu){if(menu.querySelector('[data-thinkora-copy]'))return;var b=document.createElement('button');b.className='more-item';b.setAttribute('data-thinkora-copy','1');b.innerHTML='<svg class="icon" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M6 15H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v1"/></svg><span>Copy</span>';b.addEventListener('click',function(){var message=menu.closest('.message');var content=message&&message.querySelector('.content');if(content){navigator.clipboard.writeText(content.innerText||'').catch(function(){});}menu.classList.remove('open');});menu.insertBefore(b,menu.firstChild);});}new MutationObserver(addCopy).observe(document.body,{childList:true,subtree:true});addCopy();})();</script>`;
   res.type("html").send(file.replace("</head>", polish + "</head>"));
 });
 
