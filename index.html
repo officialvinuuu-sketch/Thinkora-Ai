@@ -7,9 +7,7 @@
   <title>Thinkora AI</title>
 
   <style>
-    * {
-      box-sizing: border-box;
-    }
+    * { box-sizing: border-box; }
 
     body {
       margin: 0;
@@ -17,9 +15,84 @@
       background: #212121;
       color: white;
       height: 100vh;
+      overflow: hidden;
     }
 
     .app {
+      height: 100vh;
+      display: flex;
+    }
+
+    .sidebar {
+      width: 260px;
+      min-width: 260px;
+      background: #171717;
+      border-right: 1px solid #303030;
+      display: flex;
+      flex-direction: column;
+      padding: 12px;
+      transition: transform 0.2s ease;
+      z-index: 20;
+    }
+
+    .new-chat {
+      width: 100%;
+      height: 44px;
+      border: 1px solid #444;
+      border-radius: 10px;
+      background: #2f2f2f;
+      color: white;
+      font-size: 14px;
+      cursor: pointer;
+      text-align: left;
+      padding: 0 14px;
+    }
+
+    .new-chat:hover { background: #383838; }
+
+    .history-title {
+      color: #888;
+      font-size: 12px;
+      margin: 18px 8px 8px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .history-list {
+      flex: 1;
+      overflow-y: auto;
+    }
+
+    .history-item {
+      width: 100%;
+      border: 0;
+      border-radius: 8px;
+      background: transparent;
+      color: #ddd;
+      padding: 11px 10px;
+      margin-bottom: 3px;
+      text-align: left;
+      cursor: pointer;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      font-size: 13px;
+    }
+
+    .history-item:hover { background: #2a2a2a; }
+    .history-item.active { background: #303030; color: white; }
+
+    .sidebar-footer {
+      border-top: 1px solid #303030;
+      padding-top: 10px;
+      color: #777;
+      font-size: 11px;
+      line-height: 1.5;
+    }
+
+    .main {
+      flex: 1;
+      min-width: 0;
       height: 100vh;
       display: flex;
       flex-direction: column;
@@ -27,6 +100,7 @@
 
     .header {
       height: 60px;
+      min-height: 60px;
       display: flex;
       align-items: center;
       padding: 0 20px;
@@ -36,9 +110,20 @@
       font-weight: bold;
     }
 
-    .logo {
+    .menu-button {
+      display: none;
+      width: 38px;
+      height: 38px;
       margin-right: 10px;
+      border: 1px solid #444;
+      border-radius: 9px;
+      background: #2f2f2f;
+      color: white;
+      font-size: 20px;
+      cursor: pointer;
     }
+
+    .logo { margin-right: 10px; }
 
     .badge {
       font-size: 11px;
@@ -62,9 +147,7 @@
       margin-bottom: 10px;
     }
 
-    .welcome p {
-      color: #999;
-    }
+    .welcome p { color: #999; }
 
     .message {
       display: flex;
@@ -85,9 +168,7 @@
       font-weight: bold;
     }
 
-    .user .avatar {
-      background: #666;
-    }
+    .user .avatar { background: #666; }
 
     .content {
       max-width: 800px;
@@ -123,7 +204,7 @@
       max-height: 150px;
     }
 
-    button {
+    .send-button {
       width: 42px;
       height: 42px;
       border: none;
@@ -134,25 +215,48 @@
       cursor: pointer;
     }
 
-    button:hover {
-      opacity: 0.8;
-    }
+    .send-button:hover { opacity: 0.8; }
 
     .credit {
       text-align: center;
       color: #777;
       font-size: 11px;
+      line-height: 1.7;
       padding: 8px;
     }
 
-    @media (max-width: 700px) {
-      .chat {
-        padding: 20px 15px;
+    .overlay {
+      display: none;
+    }
+
+    @media (max-width: 800px) {
+      .sidebar {
+        position: fixed;
+        left: 0;
+        top: 0;
+        bottom: 0;
+        transform: translateX(-100%);
+        box-shadow: 8px 0 30px rgba(0, 0, 0, 0.35);
       }
 
-      .welcome h1 {
-        font-size: 28px;
+      .sidebar.open { transform: translateX(0); }
+
+      .overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.55);
+        z-index: 10;
       }
+
+      .overlay.show { display: block; }
+
+      .menu-button { display: block; }
+
+      .header { padding: 0 12px; font-size: 18px; }
+
+      .chat { padding: 20px 15px; }
+
+      .welcome h1 { font-size: 28px; }
     }
   </style>
 </head>
@@ -161,157 +265,239 @@
 
 <div class="app">
 
-  <header class="header">
-    <span class="logo">✦ Thinkora AI</span>
-    <span class="badge">AI Assistant</span>
-  </header>
+  <aside class="sidebar" id="sidebar">
+    <button class="new-chat" onclick="newChat()">＋ New chat</button>
 
-  <main class="chat" id="chat">
+    <div class="history-title">Chats</div>
+    <div class="history-list" id="historyList"></div>
 
+    <div class="sidebar-footer">
+      Thinkora AI<br>
+      AI Assistant by INNOCENT VINUU
+    </div>
+  </aside>
+
+  <div class="overlay" id="overlay" onclick="closeSidebar()"></div>
+
+  <section class="main">
+
+    <header class="header">
+      <button class="menu-button" onclick="toggleSidebar()" aria-label="Open menu">☰</button>
+      <span class="logo">✦ Thinkora AI</span>
+      <span class="badge">AI Assistant</span>
+    </header>
+
+    <main class="chat" id="chat">
+      <div class="welcome" id="welcome">
+        <h1>How can I help you?</h1>
+        <p>Ask Thinkora anything.</p>
+      </div>
+    </main>
+
+    <div class="input-area">
+      <div class="input-box">
+        <textarea
+          id="messageInput"
+          rows="1"
+          placeholder="Message Thinkora AI..."
+        ></textarea>
+        <button class="send-button" onclick="sendMessage()" aria-label="Send">↑</button>
+      </div>
+
+      <div class="credit">
+        DEVELOPER: INNOCENT VINUU<br>
+        © INNOCENT VINUU — Thinkora AI. All Rights Reserved.
+      </div>
+    </div>
+
+  </section>
+</div>
+
+<script>
+const input = document.getElementById("messageInput");
+const chat = document.getElementById("chat");
+const welcome = document.getElementById("welcome");
+const sidebar = document.getElementById("sidebar");
+const overlay = document.getElementById("overlay");
+const historyList = document.getElementById("historyList");
+
+let chats = JSON.parse(localStorage.getItem("thinkoraChats") || "[]");
+let currentChatId = localStorage.getItem("thinkoraCurrentChat") || null;
+
+// Safely migrate the previous single-history format.
+if (!chats.length) {
+  const oldHistory = JSON.parse(localStorage.getItem("thinkoraHistory") || "[]");
+  if (oldHistory.length) {
+    chats = [{
+      id: Date.now().toString(),
+      title: oldHistory[0]?.content?.slice(0, 40) || "New chat",
+      messages: oldHistory
+    }];
+    currentChatId = chats[0].id;
+    saveChats();
+  }
+}
+
+function saveChats() {
+  localStorage.setItem("thinkoraChats", JSON.stringify(chats));
+  if (currentChatId) {
+    localStorage.setItem("thinkoraCurrentChat", currentChatId);
+  }
+}
+
+function getCurrentChat() {
+  return chats.find(chatItem => chatItem.id === currentChatId) || null;
+}
+
+function renderHistory() {
+  historyList.innerHTML = "";
+
+  [...chats].reverse().forEach(chatItem => {
+    const button = document.createElement("button");
+    button.className = "history-item" + (chatItem.id === currentChatId ? " active" : "");
+    button.textContent = chatItem.title || "New chat";
+    button.onclick = () => loadChat(chatItem.id);
+    historyList.appendChild(button);
+  });
+}
+
+function clearChatUI() {
+  chat.innerHTML = `
     <div class="welcome" id="welcome">
       <h1>How can I help you?</h1>
       <p>Ask Thinkora anything.</p>
     </div>
+  `;
+}
 
-  </main>
+function loadChat(id) {
+  const selected = chats.find(chatItem => chatItem.id === id);
+  if (!selected) return;
 
-  <div class="input-area">
+  currentChatId = id;
+  saveChats();
+  clearChatUI();
 
-    <div class="input-box">
+  selected.messages.forEach(message => {
+    addMessage(message.role === "user" ? "user" : "assistant", message.content);
+  });
 
-      <textarea
-        id="messageInput"
-        rows="1"
-        placeholder="Message Thinkora AI..."
-      ></textarea>
+  renderHistory();
+  closeSidebar();
+}
 
-      <button onclick="sendMessage()">↑</button>
+function newChat() {
+  currentChatId = null;
+  localStorage.removeItem("thinkoraCurrentChat");
+  clearChatUI();
+  renderHistory();
+  closeSidebar();
+  input.focus();
+}
 
-    </div>
+function ensureCurrentChat(firstMessage) {
+  if (currentChatId && getCurrentChat()) return getCurrentChat();
 
-    <div class="credit">
-      Developer: INNOCENT VINUU • © INNOCENT VINUU
-Thinkora AI. All Rights Reserved.
-    </div>
+  const newItem = {
+    id: Date.now().toString(),
+    title: firstMessage.slice(0, 40) || "New chat",
+    messages: []
+  };
 
-  </div>
-
-</div>
-
-<script>
-
-const input = document.getElementById("messageInput");
-const chat = document.getElementById("chat");
-const welcome = document.getElementById("welcome");
-
-input.addEventListener("keydown", function(event) {
-
-  if (event.key === "Enter" && !event.shiftKey) {
-    event.preventDefault();
-    sendMessage();
-  }
-
-});
+  chats.push(newItem);
+  currentChatId = newItem.id;
+  saveChats();
+  renderHistory();
+  return newItem;
+}
 
 function addMessage(type, text) {
-
-  welcome.style.display = "none";
+  const currentWelcome = document.getElementById("welcome");
+  if (currentWelcome) currentWelcome.style.display = "none";
 
   const message = document.createElement("div");
-
   message.className = "message " + type;
 
   const avatar = document.createElement("div");
-
   avatar.className = "avatar";
-
-  avatar.textContent =
-    type === "user" ? "U" : "T";
+  avatar.textContent = type === "user" ? "U" : "T";
 
   const content = document.createElement("div");
-
   content.className = "content";
-
   content.textContent = text;
 
   message.appendChild(avatar);
   message.appendChild(content);
-
   chat.appendChild(message);
-
   chat.scrollTop = chat.scrollHeight;
 }
 
-let conversationHistory = JSON.parse(localStorage.getItem("thinkoraHistory") || "[]");
+input.addEventListener("keydown", function(event) {
+  if (event.key === "Enter" && !event.shiftKey) {
+    event.preventDefault();
+    sendMessage();
+  }
+});
 
 async function sendMessage() {
-
   const text = input.value.trim();
-
   if (!text) return;
 
+  const current = ensureCurrentChat(text);
   addMessage("user", text);
   input.value = "";
-
   addMessage("assistant", "Thinking...");
 
   try {
     const response = await fetch("/api/chat", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         message: text,
-        messages: conversationHistory
+        messages: current.messages
       })
     });
 
     const data = await response.json();
-
     const messages = chat.querySelectorAll(".message");
     const lastMessage = messages[messages.length - 1];
+    const content = lastMessage ? lastMessage.querySelector(".content") : null;
 
-    if (lastMessage) {
-      const content = lastMessage.querySelector(".content");
+    const reply = data.reply || data.error || "Something went wrong.";
 
-      if (content) {
-        const reply =
-          data.reply ||
-          data.error ||
-          "Something went wrong.";
+    if (content) content.textContent = reply;
 
-        content.textContent = reply;
-
-        conversationHistory.push({
-          role: "user",
-          content: text
-        });
-
-        conversationHistory.push({
-          role: "assistant",
-          content: reply
-        });
-        localStorage.setItem("thinkoraHistory", JSON.stringify(conversationHistory));
-      }
-    }
+    current.messages.push({ role: "user", content: text });
+    current.messages.push({ role: "assistant", content: reply });
+    saveChats();
+    renderHistory();
 
   } catch (error) {
-
     const messages = chat.querySelectorAll(".message");
     const lastMessage = messages[messages.length - 1];
+    const content = lastMessage ? lastMessage.querySelector(".content") : null;
 
-    if (lastMessage) {
-      const content = lastMessage.querySelector(".content");
-
-      if (content) {
-        content.textContent =
-          "Unable to connect to Thinkora AI server.";
-      }
+    if (content) {
+      content.textContent = "Unable to connect to Thinkora AI server.";
     }
   }
 }
 
+function toggleSidebar() {
+  sidebar.classList.toggle("open");
+  overlay.classList.toggle("show");
+}
+
+function closeSidebar() {
+  sidebar.classList.remove("open");
+  overlay.classList.remove("show");
+}
+
+renderHistory();
+
+if (currentChatId && getCurrentChat()) {
+  loadChat(currentChatId);
+}
 </script>
 
 </body>
