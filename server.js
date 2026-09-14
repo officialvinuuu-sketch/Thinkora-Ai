@@ -106,12 +106,14 @@ app.post("/api/vision", visionUpload.single("image"), async (req, res) => {
     const imageDataUrl = `data:${req.file.mimetype};base64,${req.file.buffer.toString("base64")}`;
 
     const completion = await hf.chat.completions.create({
-      model: "Qwen/Qwen2.5-VL-3B-Instruct",
+      // Explicitly use a Hugging Face provider/model confirmed for VLM chat.
+      // This avoids the previous automatic route selecting a text-only response path.
+      model: "zai-org/GLM-5.3-Flash:novita",
       messages: [
         {
           role: "system",
           content:
-            "You are Thinkora AI. Analyze images carefully and answer the user's question accurately. Do not claim to be ChatGPT or another company's AI. If something is unclear or unreadable, say so instead of guessing."
+            "You are Thinkora AI. You are a vision-capable AI assistant. Analyze the supplied image carefully and answer the user's question accurately. Do not claim to be ChatGPT or another company's AI. If something is unclear or unreadable, say so instead of guessing."
         },
         {
           role: "user",
@@ -120,7 +122,8 @@ app.post("/api/vision", visionUpload.single("image"), async (req, res) => {
             { type: "image_url", image_url: { url: imageDataUrl } }
           ]
         }
-      ]
+      ],
+      max_tokens: 800
     });
 
     const reply = completion.choices?.[0]?.message?.content;
