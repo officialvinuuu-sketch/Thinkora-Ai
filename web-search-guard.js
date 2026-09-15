@@ -49,8 +49,32 @@ function findSourceDates(result) {
   return [...new Set(dates)];
 }
 
+function improveWebAnswer(requestBody) {
+  if (!Array.isArray(requestBody.messages)) return;
+  const webIndex = requestBody.messages.findIndex(m =>
+    m && m.role === 'system' && typeof m.content === 'string' &&
+    m.content.includes('The user explicitly enabled Web Search')
+  );
+  if (webIndex < 0) return;
+
+  const instruction = `\n\nSMART ANSWER MODE: Act like a capable research assistant, not a search-result copier. Synthesize the supplied sources into a concise, natural answer that directly answers the user's question. Do not dump the search-result table or repeat raw snippets. For news/headline requests, give a clean numbered list with the exact source headline when requested, followed by a brief useful summary only when supported by the source. Do not output raw URLs unless the user explicitly asks for source URLs. If the user explicitly asks for exact source URLs, include the exact URL for each verified item, but keep the presentation clean and concise. Never create duplicate numbering, placeholder text, fake headlines, fake dates, or unsupported claims. Use only the supplied sources for web-grounded claims.`;
+  requestBody.messages[webIndex].content += instruction;
+}
+
 global.fetch = async function(input, init) {
   const url = typeof input === 'string' ? input : (input && input.url) || '';
+
+  // Make Web Search answers read like a smart assistant instead of a raw search dump.
+  if (url.includes('router.huggingface.co/v1/chat/completions') && init && typeof init.body === 'string') {
+    try {
+      const requestBody = JSON.parse(init.body);
+      improveWebAnswer(requestBody);
+      return originalFetch(input, Object.assign({}, init, { body: JSON.stringify(requestBody) }));
+    } catch (_) {
+      return originalFetch(input, init);
+    }
+  }
+
   if (url !== 'https://api.tavily.com/search' || !init || typeof init.body !== 'string') {
     return originalFetch(input, init);
   }
@@ -84,8 +108,6 @@ global.fetch = async function(input, init) {
       results = results.filter(r => {
         if (hasConflictingUrlDate(r, indiaDate)) return false;
         const sourceDates = findSourceDates(r);
-        // For a strict "today" request, require at least one explicit source date
-        // and reject anything whose known source date is not India today.
         return sourceDates.length > 0 && sourceDates.every(date => date === indiaDate);
       });
     }
