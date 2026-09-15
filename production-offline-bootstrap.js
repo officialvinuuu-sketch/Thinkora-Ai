@@ -138,6 +138,7 @@ async function callGeminiStream(model, apiKey, payload, res) {
     reader.releaseLock();
   }
   if (!sentText) throw new Error('Gemini returned no text.');
+  return { sentText };
 }
 
 function buildPayload(body, search) {
@@ -232,11 +233,13 @@ async function handleGeminiStream(req, res) {
     res.write(`data: ${JSON.stringify({ type: 'start', mode: 'online-gemini' })}\n\n`);
 
     let modelUsed = 'gemini-3.5-flash-lite';
+    let primaryStreamed = false;
     try {
-      await callGeminiStream('gemini-3.5-flash-lite', apiKey, payload, res);
+      const result = await callGeminiStream('gemini-3.5-flash-lite', apiKey, payload, res);
+      primaryStreamed = Boolean(result?.sentText);
     } catch (primaryError) {
       console.warn('Thinkora Gemini streaming primary unavailable; trying fallback:', primaryError.message);
-      if (res.writableEnded) throw primaryError;
+      if (primaryStreamed) throw primaryError;
       await callGeminiStream('gemini-3.1-flash-lite', apiKey, payload, res);
       modelUsed = 'gemini-3.1-flash-lite';
     }
