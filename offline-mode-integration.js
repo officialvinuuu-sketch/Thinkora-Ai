@@ -1,6 +1,5 @@
 (function(){
   const LOCAL_URL = "http://127.0.0.1:8080/v1/chat/completions";
-  const LOCAL_HEALTH = "http://127.0.0.1:8080/health";
   const KEY = "thinkoraModelMode";
   const originalFetch = window.fetch.bind(window);
   let mode = localStorage.getItem(KEY) || "auto";
@@ -25,17 +24,13 @@
       const r = await originalFetch(LOCAL_URL, {
         method:"POST",
         headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({
-          messages:localMessages(body),
-          max_tokens:512,
-          chat_template_kwargs:{enable_thinking:false}
-        }),
+        body:JSON.stringify({messages:localMessages(body),max_tokens:512,chat_template_kwargs:{enable_thinking:false}}),
         signal:controller.signal
       });
       const d = await r.json().catch(()=>({}));
       if(!r.ok) throw new Error(d.error?.message || d.error || `Offline AI HTTP ${r.status}`);
       const reply = d.choices?.[0]?.message?.content || "Offline AI could not generate a response.";
-      return new Response(JSON.stringify({reply, sources:[], mode:"offline"}),{status:200,headers:{"Content-Type":"application/json"}});
+      return new Response(JSON.stringify({reply,sources:[],mode:"offline"}),{status:200,headers:{"Content-Type":"application/json"}});
     } finally { clearTimeout(timer); }
   }
 
@@ -73,8 +68,8 @@
       .thinkora-model-label{font-size:11px;color:#888;white-space:nowrap;margin-right:2px}
       .thinkora-model-btn{border:1px solid #444;background:#292929;color:#aaa;border-radius:9px;padding:7px 11px;font-size:12px;white-space:nowrap}
       .thinkora-model-btn.active{background:#fff;color:#111;border-color:#fff}
-      .thinkora-mode-badge{margin-left:auto;border:1px solid #444;background:#292929;color:#aaa;border-radius:9px;padding:7px 10px;font-size:11px;white-space:nowrap}
-      @media(max-width:800px){.thinkora-model-row{padding:7px 9px}.thinkora-model-label{display:none}.thinkora-mode-badge{margin-left:0}}
+      .thinkora-mode-badge{font-size:11px;color:#777;white-space:nowrap;padding-left:3px}
+      @media(max-width:800px){.thinkora-model-row{padding:7px 9px}.thinkora-model-label{display:none}.thinkora-mode-badge{display:none}}
     `;
     document.head.appendChild(s);
   }
