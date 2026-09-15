@@ -1,0 +1,11 @@
+#!/data/data/com.termux/files/usr/bin/bash
+# Thinkora AI: start the local offline llama.cpp server after Android boot.
+# Requires Termux:Boot and the repository's termux-start-offline-ai.sh.
+
+SCRIPT="$HOME/termux-start-offline-ai.sh"
+
+if [ ! -f "$SCRIPT" ]; then
+  exit 0
+fi
+
+bash "$SCRIPT" >> "$HOME/thinkora-offline-boot.log" 2>&1
