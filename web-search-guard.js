@@ -53,7 +53,7 @@ function improveWebAnswer(requestBody) {
   );
   if (webIndex < 0) return;
 
-  requestBody.messages[webIndex].content += `\n\nSMART ANSWER MODE: Act like a capable research assistant, not a search-result copier. For news, rank supplied sources by relevance, recency, importance and source quality. Prioritize genuinely new major AI launches, model releases, research, funding, acquisitions, partnerships, products, chips, or policy/safety decisions. Exclude job listings, generic opinion, commentary, resignation posts, old incidents, evergreen explainers and unrelated stories. One article or primary event must produce at most one answer item; never split mentions inside one article into separate developments. Remove duplicate or near-duplicate stories. Use concise natural bullet points, not numbered lists. Do not dump snippets or source tables. Do not invent facts, headlines, dates, sources or URLs. For an explicit calendar-date request, only use a source when its supplied publication date, clearly date-stamped URL, or explicit date in the supplied title/snippet matches the requested date. If the source has no date evidence, exclude it rather than guessing. Never relabel an earlier source as today's news. If exact URLs are requested, copy them exactly from the supplied search results. If fewer genuinely distinct current developments are supported, return fewer rather than filling gaps. Use only the supplied Web Search Results for web-grounded claims.`;
+  requestBody.messages[webIndex].content += `\n\nSMART ANSWER MODE: Act like a capable research assistant, not a search-result copier. For news, rank supplied sources by relevance, recency, importance and source quality. Prioritize genuinely new major AI launches, model releases, research, funding, acquisitions, partnerships, products, chips, or policy/safety decisions. Exclude job listings, generic opinion, commentary, resignation posts, old incidents, evergreen explainers and unrelated stories. One article or primary event must produce at most one answer item; never split mentions inside one article into separate developments. Remove duplicate or near-duplicate stories. Use concise natural bullet points, not numbered lists. Do not dump snippets or source tables. Do not invent facts, headlines, dates, sources or URLs. For an explicit calendar-date request, use a source only when at least one supplied date signal (publication metadata, date-stamped URL, or explicit date in title/snippet) matches the requested date; if date signals conflict, prefer a direct date in the article title/snippet or URL over stale metadata. If no date evidence matches, exclude it. Never relabel an earlier source as today's news. If exact URLs are requested, copy them exactly from the supplied search results. If fewer genuinely distinct current developments are supported, return fewer rather than filling gaps. Use only the supplied Web Search Results for web-grounded claims.`;
 }
 
 global.fetch = async function(input, init) {
@@ -79,7 +79,8 @@ global.fetch = async function(input, init) {
   const indiaDate = extractIndiaDate(query);
 
   if (aiNews) {
-    body.query = `${query} Focus only on clearly AI-focused current news. Prefer major new launches, model releases, research, funding, acquisitions, partnerships, products, chips, or policy/safety decisions. Exclude job listings, old incidents, generic opinion, commentary, resignation posts, evergreen explainers and unrelated stories. Return distinct primary developments only.`.slice(0, 2000);
+    const datePhrase = indiaDate ? ` The target news date is ${indiaDate}; prioritize articles published or updated on that date.` : '';
+    body.query = `${query} Focus only on clearly AI-focused current news. Prefer major new launches, model releases, research, funding, acquisitions, partnerships, products, chips, or policy/safety decisions. Exclude job listings, old incidents, generic opinion, commentary, resignation posts, evergreen explainers and unrelated stories. Return distinct primary developments only.${datePhrase}`.slice(0, 2000);
     body.max_results = Math.max(Number(body.max_results) || 5, 10);
     body.time_range = 'day';
     body.topic = 'news';
@@ -103,11 +104,9 @@ global.fetch = async function(input, init) {
         const published = normalizeDate(r?.published_date);
         const urlDate = getUrlDate(r);
         const textDate = getTextDate(r);
-        // For an explicit calendar date, accept direct metadata, a date-stamped URL, or an explicit date in the supplied title/snippet.
-        // This avoids dropping legitimate current articles when Tavily omits published_date metadata.
-        if (published) return published === indiaDate;
-        if (urlDate) return urlDate === indiaDate;
-        return textDate === indiaDate;
+        // Accept the requested date if ANY direct signal matches it. A stale published_date must not override a matching article URL/title/snippet.
+        const signals = [published, urlDate, textDate].filter(Boolean);
+        return signals.includes(indiaDate);
       });
     }
 
@@ -128,8 +127,8 @@ global.fetch = async function(input, init) {
         const urlDate = getUrlDate(r);
         const textDate = getTextDate(r);
         if (published === indiaDate) s += 8;
-        if (urlDate === indiaDate) s += 3;
-        if (textDate === indiaDate) s += 3;
+        if (urlDate === indiaDate) s += 5;
+        if (textDate === indiaDate) s += 5;
         if (highValue.test(text)) s += 4;
         if (lowValue.test(text)) s -= 10;
         if (trusted.has(host)) s += 5;
