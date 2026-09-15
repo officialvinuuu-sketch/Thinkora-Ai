@@ -96,13 +96,13 @@ async function handleGemini(req, res) {
     };
 
     let reply;
-    let modelUsed = 'gemini-2.5-flash';
+    let modelUsed = 'gemini-3.5-flash-lite';
     try {
-      reply = await callGemini('gemini-2.5-flash', apiKey, payload);
+      reply = await callGemini('gemini-3.5-flash-lite', apiKey, payload);
     } catch (primaryError) {
       console.warn('Thinkora Gemini primary model unavailable; trying free-tier fallback:', primaryError.message);
-      reply = await callGemini('gemini-2.5-flash-lite', apiKey, payload);
-      modelUsed = 'gemini-2.5-flash-lite';
+      reply = await callGemini('gemini-3.1-flash-lite', apiKey, payload);
+      modelUsed = 'gemini-3.1-flash-lite';
     }
 
     res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
