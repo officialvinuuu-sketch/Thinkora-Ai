@@ -16,6 +16,14 @@ function normalizeDate(value) {
   return match ? `${match[1]}-${match[2]}-${match[3]}` : '';
 }
 
+function hasConflictingUrlDate(result, indiaDate) {
+  const url = String(result?.url || '');
+  const match = url.match(/\/(20\d{2})\/(0[1-9]|1[0-2])\/(0[1-9]|[12]\d|3[01])(?:\/|$)/);
+  if (!match) return false;
+  const urlDate = `${match[1]}-${match[2]}-${match[3]}`;
+  return urlDate !== indiaDate;
+}
+
 function findSourceDates(result) {
   const dates = [];
   const published = normalizeDate(result?.published_date);
@@ -65,6 +73,8 @@ global.fetch = async function(input, init) {
 
     if (indiaDate) {
       results = results.filter(r => {
+        // Hard reject a URL whose explicit article date conflicts with India today.
+        if (hasConflictingUrlDate(r, indiaDate)) return false;
         const sourceDates = findSourceDates(r);
         return sourceDates.every(date => date === indiaDate);
       });
