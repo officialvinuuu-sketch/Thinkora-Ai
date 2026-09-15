@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Thinkora AI — Offline UI Preview</title>
+  <style>
+    html,body{margin:0;height:100%;background:#111;color:#eee;font-family:Arial,Helvetica,sans-serif}
+    .bar{height:54px;background:#171717;border-bottom:1px solid #333;display:flex;align-items:center;gap:8px;padding:0 10px;box-sizing:border-box}
+    .label{font-size:12px;color:#999;margin-right:auto}
+    button{border:1px solid #444;background:#292929;color:#ccc;border-radius:9px;padding:8px 10px;font-size:12px}
+    button.active{background:#eee;color:#111;border-color:#eee}
+    iframe{display:block;width:100%;height:calc(100% - 54px);border:0;background:#212121}
+    #status{position:fixed;left:10px;bottom:10px;background:#292929;border:1px solid #444;border-radius:8px;padding:7px 9px;font-size:10px;color:#aaa;z-index:5}
+  </style>
+</head>
+<body>
+  <div class="bar">
+    <span class="label">Safe preview — original Thinkora UI is loaded unchanged</span>
+    <button id="online">Smart Online</button>
+    <button id="offline">Offline AI</button>
+    <button id="auto" class="active">Auto</button>
+  </div>
+  <iframe id="app" src="/" title="Thinkora AI preview"></iframe>
+  <div id="status">Loading preview…</div>
+<script>
+(function(){
+  'use strict';
+  const frame=document.getElementById('app'),status=document.getElementById('status');
+  const buttons={online:document.getElementById('online'),offline:document.getElementById('offline'),auto:document.getElementById('auto')};
+  let mode='auto',installed=false;
+  function setStatus(t){status.textContent=t;}
+  function select(m){mode=m;Object.keys(buttons).forEach(k=>buttons[k].classList.toggle('active',k===m));apply();}
+  Object.keys(buttons).forEach(k=>buttons[k].addEventListener('click',()=>select(k)));
+  function apply(){
+    const w=frame.contentWindow,d=w&&w.document;
+    if(!w||!d||!w.fetch)return;
+    if(!installed){
+      installed=true;
+      const s=d.createElement('script');s.src='/offline-client.js';d.head.appendChild(s);
+      const tag=d.createElement('div');tag.id='thinkoraPreviewMode';tag.style.cssText='position:absolute;right:12px;top:12px;z-index:90;border:1px solid #555;background:#292929;color:#aaa;border-radius:9px;padding:7px 9px;font:11px Arial';
+      tag.textContent='Mode: Auto';
+      d.body.appendChild(tag);
+      const original=w.fetch.bind(w);
+      w.fetch=async function(resource,options){
+        const url=typeof resource==='string'?resource:(resource&&resource.url)||'';
+        if(url.endsWith('/api/chat')&&options&&typeof options.body==='string'){
+          const chosen=mode==='auto' ? (navigator.onLine?'online':'offline') : mode;
+          tag.textContent='Mode: '+(chosen==='online'?'Smart Online':'Offline AI');
+          if(chosen==='offline'){
+            const body=JSON.parse(options.body);
+            const history=Array.isArray(body.messages)?body.messages:[];
+            const text=String(body.message||'');
+            try{
+              const reply=await w.ThinkoraOffline.chat(text,{messages:[...history,{role:'user',content:text}],maxTokens:512});
+              return new Response(JSON.stringify({reply,sources:[]}),{status:200,headers:{'Content-Type':'application/json'}});
+            }catch(e){
+              return new Response(JSON.stringify({error:e.message||'Offline AI request failed'}),{status:500,headers:{'Content-Type':'application/json'}});
+            }
+          }
+          if(mode==='auto'){
+            try{return await original(resource,options)}catch(e){
+              if(w.ThinkoraOffline&&await w.ThinkoraOffline.isAvailable()){
+                const body=JSON.parse(options.body),history=Array.isArray(body.messages)?body.messages:[],text=String(body.message||'');
+                const reply=await w.ThinkoraOffline.chat(text,{messages:[...history,{role:'user',content:text}],maxTokens:512});
+                tag.textContent='Mode: Offline AI (fallback)';
+                return new Response(JSON.stringify({reply,sources:[]}),{status:200,headers:{'Content-Type':'application/json'}});
+              }
+              throw e;
+            }
+          }
+        }
+        return original(resource,options);
+      };
+    }
+    const tag=d.getElementById('thinkoraPreviewMode');
+    if(tag)tag.textContent='Mode: '+(mode==='online'?'Smart Online':mode==='offline'?'Offline AI':'Auto');
+    setStatus('Safe preview ready — mode: '+mode.toUpperCase());
+  }
+  frame.addEventListener('load',()=>setTimeout(apply,250));
+})();
+</script>
+</body>
+</html>
