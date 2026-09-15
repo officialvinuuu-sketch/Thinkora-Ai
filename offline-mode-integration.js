@@ -1,6 +1,6 @@
 (function(){
   const LOCAL_URL = "http://127.0.0.1:8080/v1/chat/completions";
-  const ONLINE_URL = "/api/online-chat";
+  const ONLINE_URL = "/api/online-chat-stream";
   const KEY = "thinkoraModelMode";
   const originalFetch = window.fetch.bind(window);
   let mode = localStorage.getItem(KEY) || "auto";
@@ -31,11 +31,12 @@
     const controller = new AbortController();
     const timer = setTimeout(()=>controller.abort(), 30000);
     try{
-      const requestBody = Object.assign({}, body);
-      const r = await originalFetch(ONLINE_URL,Object.assign({},options,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(requestBody),signal:controller.signal}));
-      const d = await r.json().catch(()=>({}));
-      if(!r.ok) throw new Error(d.error || `Smart Online HTTP ${r.status}`);
-      return new Response(JSON.stringify(d),{status:200,headers:{"Content-Type":"application/json"}});
+      const r = await originalFetch(ONLINE_URL,Object.assign({},options,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body),signal:controller.signal}));
+      if(!r.ok){
+        const d = await r.json().catch(()=>({}));
+        throw new Error(d.error || `Smart Online HTTP ${r.status}`);
+      }
+      return r;
     } finally { clearTimeout(timer); }
   }
   async function routeChat(body,options){
