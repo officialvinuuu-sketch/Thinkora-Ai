@@ -27,17 +27,63 @@
       return new Response(JSON.stringify({reply:d.choices?.[0]?.message?.content||"Offline AI could not generate a response.",sources:[],mode:"offline"}),{status:200,headers:{"Content-Type":"application/json"}});
     } finally { clearTimeout(timer); }
   }
+  function createStreamBubble(){
+    const root=document.getElementById("chatInner");
+    if(!root)return null;
+    const row=document.createElement("div");
+    row.className="message assistant thinkora-streaming-message";
+    row.innerHTML='<div class="avatar">T</div><div class="content"><p class="thinkora-streaming-text"></p></div>';
+    root.appendChild(row);
+    const chat=document.getElementById("chat");
+    if(chat)chat.scrollTop=chat.scrollHeight;
+    return {row,text:row.querySelector(".thinkora-streaming-text")};
+  }
+  function removeStreamBubble(bubble){ if(bubble?.row?.parentNode) bubble.row.parentNode.removeChild(bubble.row); }
   async function onlineChat(body,options){
     const controller = new AbortController();
     const timer = setTimeout(()=>controller.abort(), 30000);
+    const bubble=createStreamBubble();
     try{
       const r = await originalFetch(ONLINE_URL,Object.assign({},options,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body),signal:controller.signal}));
       if(!r.ok){
         const d = await r.json().catch(()=>({}));
         throw new Error(d.error || `Smart Online HTTP ${r.status}`);
       }
-      return r;
-    } finally { clearTimeout(timer); }
+      if(!r.body)throw new Error("Smart Online streaming response has no body.");
+      const reader=r.body.getReader(),decoder=new TextDecoder();
+      let buffer="",reply="",sources=[],model="";
+      const consume=raw=>{
+        for(const event of raw.split(/\r?\n\r?\n/)){
+          for(const line of event.split(/\r?\n/)){
+            if(!line.startsWith("data:"))continue;
+            const value=line.slice(5).trim();
+            if(!value||value==="[DONE]")continue;
+            let d;try{d=JSON.parse(value)}catch{continue;}
+            if(d.type==="delta"&&typeof d.text==="string"){
+              reply+=d.text;
+              if(bubble?.text){bubble.text.textContent=reply;const chat=document.getElementById("chat");if(chat)chat.scrollTop=chat.scrollHeight;}
+            }else if(d.type==="done"){
+              sources=Array.isArray(d.sources)?d.sources:[];model=d.model||"";
+            }else if(d.type==="error")throw new Error(d.error||"Smart Online streaming failed.");
+          }
+        }
+      };
+      while(true){
+        const {value,done}=await reader.read();
+        if(done)break;
+        buffer+=decoder.decode(value,{stream:true});
+        const parts=buffer.split(/\r?\n\r?\n/);
+        buffer=parts.pop()||"";
+        consume(parts.join("\n\n"));
+      }
+      buffer+=decoder.decode();
+      if(buffer)consume(buffer);
+      if(!reply.trim())throw new Error("Smart Online returned no text.");
+      return new Response(JSON.stringify({reply,sources,mode:"online-gemini",model}),{status:200,headers:{"Content-Type":"application/json"}});
+    }catch(e){
+      removeStreamBubble(bubble);
+      throw e;
+    }finally{clearTimeout(timer);}
   }
   async function routeChat(body,options){
     if(mode === "offline") return offlineChat(body);
@@ -57,7 +103,7 @@
   };
   function install(){
     if(document.getElementById("thinkoraModelRow"))return;
-    const style=document.createElement("style");style.id="thinkoraOfflineStyle";style.textContent='.thinkora-model-row{display:flex;align-items:center;gap:7px;padding:8px 10px;border-bottom:1px solid #303030;background:#171717;overflow-x:auto;scrollbar-width:none}.thinkora-model-row::-webkit-scrollbar{display:none}.thinkora-model-label{font-size:11px;color:#888;white-space:nowrap}.thinkora-model-btn{border:1px solid #444;background:#292929;color:#aaa;border-radius:9px;padding:7px 11px;font-size:12px;white-space:nowrap}.thinkora-model-btn.active{background:#fff;color:#111;border-color:#fff}.thinkora-mode-badge{font-size:11px;color:#777;white-space:nowrap}@media(max-width:800px){.thinkora-model-row{padding:7px 9px}.thinkora-model-label,.thinkora-mode-badge{display:none}}';document.head.appendChild(style);
+    const style=document.createElement("style");style.id="thinkoraOfflineStyle";style.textContent='.thinkora-model-row{display:flex;align-items:center;gap:7px;padding:8px 10px;border-bottom:1px solid #303030;background:#171717;overflow-x:auto;scrollbar-width:none}.thinkora-model-row::-webkit-scrollbar{display:none}.thinkora-model-label{font-size:11px;color:#888;white-space:nowrap}.thinkora-model-btn{border:1px solid #444;background:#292929;color:#aaa;border-radius:9px;padding:7px 11px;font-size:12px;white-space:nowrap}.thinkora-model-btn.active{background:#fff;color:#111;border-color:#fff}.thinkora-mode-badge{font-size:11px;color:#777;white-space:nowrap}.thinkora-streaming-text{white-space:pre-wrap}@media(max-width:800px){.thinkora-model-row{padding:7px 9px}.thinkora-model-label,.thinkora-mode-badge{display:none}}';document.head.appendChild(style);
     const topbar=document.querySelector('.topbar');if(!topbar)return;
     const row=document.createElement('div');row.className='thinkora-model-row';row.id='thinkoraModelRow';row.innerHTML='<span class="thinkora-model-label">AI Mode</span><button class="thinkora-model-btn" data-mode="online">Smart Online</button><button class="thinkora-model-btn" data-mode="offline">Offline AI</button><button class="thinkora-model-btn" data-mode="auto">Auto</button><span class="thinkora-mode-badge" id="thinkoraModeBadge"></span>';topbar.parentNode.insertBefore(row,topbar.nextSibling);
     row.querySelectorAll('[data-mode]').forEach(btn=>btn.addEventListener('click',()=>{mode=btn.dataset.mode;localStorage.setItem(KEY,mode);renderMode();}));renderMode();
