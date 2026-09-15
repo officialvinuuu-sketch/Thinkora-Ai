@@ -1,0 +1,10 @@
+{
+  "name": "Thinkora AI",
+  "short_name": "Thinkora",
+  "description": "Thinkora AI — AI Assistant by INNOCENT VINUU",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#171717",
+  "theme_color": "#171717",
+  "icons": []
+}
