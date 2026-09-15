@@ -33,9 +33,7 @@ function parsePublishedIndiaDate(value) {
 function hasExplicitOldDateInTitle(result, targetDate) {
   const title = String(result?.title || '');
   if (!targetDate || !title) return false;
-  const [y, m, d] = targetDate.split('-').map(Number);
   const months = 'January February March April May June July August September October November December'.split(' ');
-  const monthName = months[m - 1];
   const older = new RegExp(`\\b(?:${months.join('|')})\\s+\\d{1,2}(?:st|nd|rd|th)?(?:,)?\\s+20\\d{2}\\b`, 'i');
   const iso = title.match(/\\b20\\d{2}[-/]\\d{2}[-/]\\d{2}\\b/);
   if (iso && iso[0] !== targetDate) return true;
@@ -77,16 +75,7 @@ function improveWebAnswer(requestBody) {
   );
   if (webIndex < 0) return;
 
-  requestBody.messages[webIndex].content += `\n\nTHINKORA SMART WEB ANSWER MODE: Act like a careful research assistant, not a search-result summarizer. First understand the user's intent, then select only the strongest evidence. For current AI news, a qualifying item must describe a concrete, meaningful development: a launch, release, research result, funding round, acquisition, partnership, infrastructure/chip announcement, rollout, court/regulatory decision, or other clearly new event. Do not promote opinion pieces, generic explainers, market reaction, job listings, background stories, old incidents, podcasts about older news, event-session listings, or articles that merely mention AI. Do not turn a snippet into a new headline. Keep the source's actual headline meaning intact. One real-world event must produce at most one answer item even when several sources cover it. Prefer primary announcements and high-quality reporting; use secondary sources for corroboration, not as separate events. For a request for the top 5, return up to 5 genuinely distinct high-value developments, not five just to fill the quota. If only 2 or 3 are well supported, return only those and say fewer verified developments were available. For explicit dates, use the target date as a hard freshness requirement, but remember that publishers may use UTC timestamps or URLs containing an earlier date. Do not reject a result solely because its URL contains an earlier date or because its snippet mentions an earlier event. Never invent facts, dates, headlines, rankings, sources or URLs. Use only supplied Web Search Results for web-grounded claims. Give a direct answer first, then concise supporting details. Use natural headings and bullets when useful, avoid repetitive disclaimers, and clearly distinguish verified facts from uncertainty.`;
-}
-
-async function fetchTavily(url, init, queryOverride) {
-  const body = JSON.parse(init.body);
-  if (queryOverride) body.query = queryOverride.slice(0, 2000);
-  const response = await originalFetch(url, Object.assign({}, init, { body: JSON.stringify(body) }));
-  if (!response.ok) return { response, data: null };
-  try { return { response, data: await response.json() }; }
-  catch (_) { return { response, data: null }; }
+  requestBody.messages[webIndex].content += `\n\nTHINKORA SMART WEB ANSWER MODE: Act like a careful research assistant, not a search-result summarizer. First understand the user's intent, then select only the strongest evidence. For current AI news, a qualifying item must describe a concrete, meaningful development: a launch, release, research result, funding round, acquisition, partnership, infrastructure/chip announcement, rollout, court/regulatory decision, or other clearly new event. Do not promote opinion pieces, generic explainers, market reaction, job listings, background stories, old incidents, podcasts about older news, event-session listings, or articles that merely mention AI. Do not turn a snippet into a new headline. Keep the source's actual headline meaning intact. One real-world event must produce at most one answer item even when several sources cover it. Prefer primary announcements and high-quality reporting; use secondary sources for corroboration, not as separate events. For a request for the top 5, return up to 5 genuinely distinct high-value developments, not five just to fill the quota. If only 2 or 3 are well supported, return only those and say fewer verified developments were available. For explicit dates, use the target date as a hard freshness requirement. Publisher timestamps and URLs can use different time zones, so do not reject a current-day result solely because its metadata or URL uses a neighboring calendar date. However, if the article TITLE itself explicitly states an older publication/event date, reject it. Never invent facts, dates, headlines, rankings, sources or URLs. Use only supplied Web Search Results for web-grounded claims. Give a direct answer first, then concise supporting details. Use natural headings and bullets when useful, avoid repetitive disclaimers, and clearly distinguish verified facts from uncertainty.`;
 }
 
 global.fetch = async function(input, init) {
@@ -167,11 +156,7 @@ global.fetch = async function(input, init) {
     if (!eventTitle.test(title)) return false;
     if (lowTitle.test(title)) return false;
     if (lowContent.test(combined)) return false;
-    if (indiaDate) {
-      const publishedIndia = parsePublishedIndiaDate(r?.published_date);
-      if (publishedIndia && publishedIndia !== indiaDate) return false;
-      if (hasExplicitOldDateInTitle(r, indiaDate)) return false;
-    }
+    if (indiaDate && hasExplicitOldDateInTitle(r, indiaDate)) return false;
     return true;
   });
 
