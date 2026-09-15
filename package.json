@@ -4,7 +4,7 @@
   "description": "Thinkora AI - AI Assistant by INNOCENT VINUU",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node -r ./web-search-guard.js server.js"
   },
   "engines": {
     "node": ">=20"
