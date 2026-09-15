@@ -3,7 +3,7 @@ const originalFetch = global.fetch;
 function isAiNewsQuery(query) {
   const q = String(query || '').toLowerCase();
   return /\b(ai|artificial intelligence|machine learning|generative ai|genai|openai|chatgpt|anthropic|gemini|claude|copilot|nvidia)\b/i.test(q) &&
-    /\b(news|headline|headlines|breaking|latest|current|today|recent)\b/i.test(q);
+    /\b(news|headline|headlines|breaking|latest|current|today|recent|development|developments)\b/i.test(q);
 }
 
 function extractIndiaDate(query) {
@@ -31,6 +31,11 @@ function getPublishedDate(result) {
   return normalizeDate(result?.published_date);
 }
 
+function getHost(result) {
+  try { return new URL(String(result?.url || '')).hostname.toLowerCase().replace(/^www\./, ''); }
+  catch (_) { return ''; }
+}
+
 function improveWebAnswer(requestBody) {
   if (!Array.isArray(requestBody.messages)) return;
   const webIndex = requestBody.messages.findIndex(m =>
@@ -39,9 +44,7 @@ function improveWebAnswer(requestBody) {
   );
   if (webIndex < 0) return;
 
-  const instruction = `\n\nSMART ANSWER MODE: Act like a capable research assistant, not a search-result copier. First understand the user's intent, then select the most relevant and freshest supplied evidence. For news requests, prioritize substantive current developments that materially matter to AI: major launches or releases, important model or product announcements, significant research findings, major funding/acquisitions/partnerships, meaningful AI policy or safety decisions, and major company or industry changes. Prefer direct reporting of a new development over job listings, old incidents, evergreen explainers, generic opinion, resignation posts, speculative commentary, or articles whose main event happened earlier. Rank by importance, relevance and recency, then remove duplicate or near-duplicate stories. Do not simply echo search-result order. Synthesize evidence into a concise, natural answer and explain why each item matters when useful. Use simple bullet points (•) for multiple developments; do NOT use numbered lists and do NOT repeat the same number. Do not dump raw snippets or a markdown source table. Preserve the source's exact headline only when the user asks for the exact headline; otherwise summarize naturally. Do not output raw URLs unless the user explicitly asks for them. If exact source URLs are requested, copy them exactly from the supplied sources and associate each URL with the correct item. Never invent headlines, dates, sources, URLs, or facts. IMPORTANT: A supplied source does not need a published_date field to be usable. The search was explicitly performed for today's India date. If a source has no explicit conflicting date, it may be used as current evidence, but never invent or state a publication date that the source does not provide. Reject a source as stale when its supplied publication date, URL date, or source text clearly shows it is from an earlier date. Do not say that no current sources exist merely because publication-date metadata is missing. If the supplied sources are genuinely insufficient for a confident answer, say so rather than filling gaps. Use only the supplied Web Search Results for web-grounded claims.
-
-ONE-SOURCE-ONE-ITEM RULE: Treat each retrieved source/article as ONE news item only. Never split a single article into multiple separate developments just because its snippet mentions other companies, events, jobs, conferences, fellowships, or related stories. Do not turn a secondary mention, example, background reference, hyperlink title, or sidebar item inside one source into a separate headline. For every bullet, choose one primary news event and support that bullet from one primary source. If several bullets come from the same source, allow that only when the source clearly reports separate primary announcements; otherwise keep only the strongest primary development from that source. Never count a job listing, conference mention, fellowship mention, or old incident embedded inside another article as a separate current development. When the user asks for five important developments, return up to five genuinely distinct primary developments, not five facts extracted from one article.`;
+  const instruction = `\n\nSMART ANSWER MODE: Act like a capable research assistant, not a search-result copier. First understand the user's intent, then select the most relevant and freshest supplied evidence. For news requests, prioritize substantive current developments that materially matter to AI: major launches or releases, important model or product announcements, significant research findings, major funding/acquisitions/partnerships, meaningful AI policy or safety decisions, and major company or industry changes. Prefer direct reporting of a new development over job listings, old incidents, evergreen explainers, generic opinion, resignation posts, speculative commentary, or articles whose main event happened earlier. Prefer reputable primary sources and established news outlets when the supplied results contain them. Rank by importance, relevance, source quality and recency, then remove duplicate or near-duplicate stories. Do not simply echo search-result order. One underlying article or event must produce at most one answer item, even if the article mentions several related projects, people, or announcements. Do not turn a secondary mention, example, background reference, hyperlink title, or sidebar item inside one source into a separate development. For every bullet, choose one primary news event and support that bullet from one primary source. If several bullets come from the same source, allow that only when the source clearly reports separate primary announcements; otherwise keep only the strongest primary development from that source. Never count a job listing, conference mention, fellowship mention, or old incident embedded inside another article as a separate current development. When the user asks for five important developments, return up to five genuinely distinct primary developments, not five facts extracted from one article. Synthesize evidence into a concise, natural answer and explain why each item matters when useful. Use simple bullet points (•) for multiple developments; do NOT use numbered lists and do NOT repeat the same number. Do not dump raw snippets or a markdown source table. Preserve the source's exact headline only when the user asks for the exact headline; otherwise summarize naturally. Do not output raw URLs unless the user explicitly asks for them. If exact source URLs are requested, copy them exactly from the supplied sources and associate each URL with the correct item. Never invent headlines, dates, sources, URLs, or facts. IMPORTANT: A supplied source does not need a published_date field to be usable. The search was explicitly performed for today's India date. If a source has no explicit conflicting date, it may be used as current evidence, but never invent or state a publication date that the source does not provide. Reject a source as stale when its supplied publication date, URL date, or source text clearly shows it is from an earlier date. Do not say that no current sources exist merely because publication-date metadata is missing. If the supplied sources are genuinely insufficient for a confident answer, say so rather than filling gaps. Use only the supplied Web Search Results for web-grounded claims.`;
   requestBody.messages[webIndex].content += instruction;
 }
 
@@ -101,7 +104,7 @@ global.fetch = async function(input, init) {
     const seenTitleKeys = new Set();
     results = results.filter(r => {
       const normalizedUrl = String(r.url || '').trim().toLowerCase().replace(/\/$/, '');
-      const titleKey = String(r.title || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().split(/\s+/).slice(0, 12).join(' ');
+      const titleKey = String(r.title || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().split(/\s+/).slice(0, 14).join(' ');
       if (normalizedUrl && seenUrls.has(normalizedUrl)) return false;
       if (titleKey && seenTitleKeys.has(titleKey)) return false;
       if (normalizedUrl) seenUrls.add(normalizedUrl);
@@ -112,16 +115,21 @@ global.fetch = async function(input, init) {
     const lowValue = /\b(job listings?|careers?|hiring|vacanc(?:y|ies)|jobs? board|opinion|column|commentary|explainer|how to|guide|resignation|exit note|former staff|former researcher|warns of|fearmongering|investor sentiment|stock (?:market|shares?)|market volatility)\b/i;
     const highValue = /\b(announc(?:e|ed|es|ement)|launch(?:ed|es)?|release(?:d|s)?|unveil(?:ed|s)?|debut(?:ed|s)?|funding|raised|acqui(?:re|red|res)|partnership|deal|model|chip|policy|regulation|research|study|benchmark|security|product|rollout|update|open[- ]source|investment)\b/i;
     const majorSignal = /\b(billion|million|major|breakthrough|new model|new product|world's first|first-of-its-kind|largest|significant|official)\b/i;
+    const trustedHosts = new Set(['reuters.com','apnews.com','bbc.com','bbc.co.uk','bloomberg.com','ft.com','wsj.com','nytimes.com','theverge.com','techcrunch.com','wired.com','arstechnica.com','technologyreview.com','cnbc.com','forbes.com','venturebeat.com']);
+    const primaryHosts = /(^|\.)((openai|anthropic|deepmind|google|microsoft|nvidia|apple|meta|amazon|aws|huggingface|lenovo)\.com)$/i;
 
     results.sort((a, b) => {
       const score = result => {
         const text = `${result.title || ''} ${result.content || ''}`.toLowerCase();
+        const host = getHost(result);
         let value = 0;
         if (getPublishedDate(result) === indiaDate) value += 5;
         if (getUrlDate(result) === indiaDate) value += 2;
         if (highValue.test(text)) value += 4;
         if (majorSignal.test(text)) value += 2;
         if (lowValue.test(text)) value -= 8;
+        if (trustedHosts.has(host)) value += 5;
+        if (primaryHosts.test(host)) value += 6;
         if (/\b(announced today|launched today|released today|published today|today)\b/i.test(text)) value += 2;
         const terms = ['artificial intelligence', 'generative ai', 'ai model', 'openai', 'anthropic', 'gemini', 'nvidia', 'llm'];
         value += terms.reduce((n, term) => n + (text.includes(term) ? 1 : 0), 0);
