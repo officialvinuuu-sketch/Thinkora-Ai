@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Thinkora AI — Model Switch Test</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#212121;color:#eee;font-family:Arial,sans-serif;padding:24px}.card{max-width:620px;margin:30px auto;background:#171717;border:1px solid #3a3a3a;border-radius:18px;padding:22px}.brand{font-size:28px;font-weight:700;margin-bottom:8px}.muted{color:#999;line-height:1.5}.modes{display:flex;gap:8px;flex-wrap:wrap;margin:22px 0}.mode{border:1px solid #555;background:#292929;color:#ddd;border-radius:10px;padding:10px 14px}.mode.active{background:#fff;color:#111;border-color:#fff}.status{padding:12px;border-radius:10px;background:#292929;margin:12px 0}.ok{color:#9fdfad}.bad{color:#ff9999}.prompt{width:100%;min-height:100px;resize:vertical;border:1px solid #555;background:#2f2f2f;color:#fff;border-radius:12px;padding:12px;font:inherit}.run{margin-top:12px;border:0;border-radius:10px;padding:12px 18px;background:#fff;color:#111;font-weight:700}.out{white-space:pre-wrap;margin-top:16px;padding:14px;border:1px solid #444;border-radius:12px;background:#101010;min-height:70px}
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="brand">✦ Thinkora AI — Model Test</div>
+  <div class="muted">Temporary safe test page. The main Thinkora chat UI is not modified by this page.</div>
+  <div class="modes">
+    <button class="mode active" data-mode="auto">Auto</button>
+    <button class="mode" data-mode="online">Smart Online</button>
+    <button class="mode" data-mode="offline">Offline AI</button>
+  </div>
+  <div class="status" id="network">Checking internet and local AI…</div>
+  <textarea class="prompt" id="prompt">Explain artificial intelligence in one short paragraph.</textarea>
+  <button class="run" id="run">Test Selected Mode</button>
+  <div class="out" id="out">No response yet.</div>
+</div>
+<script>
+const LOCAL='http://127.0.0.1:8080';let mode='auto';
+const $=id=>document.getElementById(id);
+async function localHealth(){try{const r=await fetch(LOCAL+'/health',{cache:'no-store'});if(!r.ok)throw Error('HTTP '+r.status);return await r.json()}catch(e){return null}}
+async function refresh(){const h=await localHealth();$('network').innerHTML=(navigator.onLine?'✓ Internet appears available':'⚠ Browser reports no internet')+'<br>'+(h?'✓ Local llama.cpp reachable: '+JSON.stringify(h):'✗ Local llama.cpp not reachable');}
+function choose(){document.querySelectorAll('.mode').forEach(b=>b.classList.toggle('active',b.dataset.mode===mode))}
+document.querySelectorAll('.mode').forEach(b=>b.onclick=()=>{mode=b.dataset.mode;choose()});
+$('run').onclick=async()=>{const p=$('prompt').value.trim();if(!p)return; $('out').textContent='Testing '+mode+' mode…';try{let selected=mode;if(selected==='auto')selected=(navigator.onLine?'online':'offline');if(selected==='offline'){const r=await fetch(LOCAL+'/v1/chat/completions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:[{role:'system',content:'You are Thinkora AI, a helpful and concise assistant.'},{role:'user',content:p}],chat_template_kwargs:{enable_thinking:false},max_tokens:160})});const d=await r.json();if(!r.ok)throw Error(d.error?.message||'Offline request failed');$('out').textContent='OFFLINE AI:\n\n'+(d.choices?.[0]?.message?.content||'No response');return}const r=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:p,messages:[]})});const d=await r.json();if(!r.ok)throw Error(d.error||'Online request failed');$('out').textContent='SMART ONLINE:\n\n'+(d.reply||'No response')}catch(e){$('out').textContent='Test failed: '+e.message}}
+refresh();setInterval(refresh,5000);
+</script>
+</body>
+</html>
