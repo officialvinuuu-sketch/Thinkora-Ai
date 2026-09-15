@@ -53,7 +53,7 @@ function improveWebAnswer(requestBody) {
   );
   if (webIndex < 0) return;
 
-  requestBody.messages[webIndex].content += `\n\nSMART ANSWER MODE: Act like a capable research assistant, not a search-result copier. For news, rank supplied sources by relevance, recency, importance and source quality. Prioritize genuinely new major AI launches, model releases, research, funding, acquisitions, partnerships, products, chips, or policy/safety decisions. Exclude job listings, generic opinion, commentary, resignation posts, old incidents, evergreen explainers and unrelated stories. One article or primary event must produce at most one answer item; never split mentions inside one article into separate developments. Remove duplicate or near-duplicate stories. Use concise natural bullet points, not numbered lists. Do not dump snippets or source tables. Do not invent facts, headlines, dates, sources or URLs. For an explicit calendar-date request, use a source only when at least one supplied date signal (publication metadata, date-stamped URL, or explicit date in title/snippet) matches the requested date; when no date signal is available, the source may be used only if it came from the current-day news search and does not contain a conflicting older date. If date signals conflict, prefer a direct date in the article title/snippet or URL over stale metadata. Never relabel an earlier source as today's news. If exact URLs are requested, copy them exactly from the supplied search results. If fewer genuinely distinct current developments are supported, return fewer rather than filling gaps. Use only the supplied Web Search Results for web-grounded claims.`;
+  requestBody.messages[webIndex].content += `\n\nSMART ANSWER MODE: For current AI news, behave like a strict editor. A result is eligible only when its actual article title represents a concrete, new AI event such as a launch, model release, product release, research result, funding round, acquisition, partnership, chip/hardware announcement, rollout, or policy/regulatory decision. Do not promote background articles, generic explainers, market reaction, opinion, commentary, event-session descriptions, old incidents, job listings, or articles that merely mention AI. One article/primary event produces at most one item. Deduplicate near-identical reports of the same event. Do not turn a source snippet into a new headline that is not supported by its title. For explicit calendar-date requests, prefer sources with a direct target-date signal in the article text/title/URL. A stale publication metadata field alone must not override a direct target-date signal in the source. But if the article text/title/URL explicitly shows an older date, reject it. If fewer genuinely distinct current developments are supported, return fewer. Never invent facts, dates, headlines, sources or URLs. Use only supplied Web Search Results for web-grounded claims.`;
 }
 
 global.fetch = async function(input, init) {
@@ -79,9 +79,11 @@ global.fetch = async function(input, init) {
   const indiaDate = extractIndiaDate(query);
 
   if (aiNews) {
-    const datePhrase = indiaDate ? ` The target news date is ${indiaDate}; prioritize articles published or updated on that date.` : '';
-    body.query = `${query} Focus only on clearly AI-focused current news. Prefer major new launches, model releases, research, funding, acquisitions, partnerships, products, chips, or policy/safety decisions. Exclude job listings, old incidents, generic opinion, commentary, resignation posts, evergreen explainers and unrelated stories. Return distinct primary developments only.${datePhrase}`.slice(0, 2000);
-    body.max_results = Math.max(Number(body.max_results) || 5, 10);
+    const datePhrase = indiaDate
+      ? ` The target news date is ${indiaDate}. Find concrete AI developments first reported or officially announced on that date; do not return older articles merely because they mention AI.`
+      : '';
+    body.query = `${query} Focus only on concrete AI news developments. Prioritize major new launches, model releases, research results, funding, acquisitions, partnerships, products, chips/hardware, rollouts, or policy/regulatory decisions. Exclude job listings, old incidents, generic opinion, commentary, market-reaction stories, evergreen explainers, event-session descriptions, and unrelated news. Each result should represent one distinct primary development.${datePhrase}`.slice(0, 2000);
+    body.max_results = Math.max(Number(body.max_results) || 5, 12);
     body.time_range = 'day';
     body.topic = 'news';
   }
@@ -92,50 +94,63 @@ global.fetch = async function(input, init) {
   try {
     const data = await response.clone().json();
     let results = Array.isArray(data.results) ? data.results : [];
+
     const relevance = /\b(ai|artificial intelligence|machine learning|generative ai|genai|openai|chatgpt|anthropic|gemini|claude|copilot|nvidia|deepmind|llm|large language model|robotics|ai model|ai chip)\b/i;
-    const lowValue = /\b(job listings?|careers?|hiring|vacanc(?:y|ies)|jobs? board|opinion|column|commentary|explainer|how to|guide|resignation|exit note|former staff|former researcher|fearmongering|investor sentiment|market volatility)\b/i;
-    const highValue = /\b(announc(?:e|ed|es|ement)|launch(?:ed|es)?|release(?:d|s)?|unveil(?:ed|s)?|debut(?:ed|s)?|funding|raised|acqui(?:re|red|res)|partnership|deal|model|chip|policy|regulation|research|study|benchmark|security|product|rollout|update|open[- ]source|investment)\b/i;
-    const trusted = new Set(['reuters.com','apnews.com','bbc.com','bbc.co.uk','bloomberg.com','ft.com','wsj.com','nytimes.com','theverge.com','techcrunch.com','wired.com','arstechnica.com','technologyreview.com','cnbc.com','forbes.com','venturebeat.com']);
+    const titleEvent = /\b(new|launch(?:es|ed)?|release(?:s|d)?|released|introduc(?:es|ed)|announc(?:es|ed|ement)|unveil(?:s|ed)|acqui(?:res|red)|buy(?:s|ing)?|raise(?:s|d)?|funding|financing|partnership|partner(?:s|ed)?|deal|investment|invest(?:s|ed)?|rolls? out|rollout|ships?|debut(?:s|ed)|secures?|raises?|research|study|benchmark|model|chip|product)\b/i;
+    const lowValueTitle = /\b(opinion|commentary|explainer|guide|how to|what happens when|questions answered|calls? for|urges?|may need to|warns?|warning|highlights?|analysis|market reaction|stocks?|stock|sentiment|resignation|former (?:president|employee|researcher)|slowdown|slow down)\b/i;
+    const lowValueContent = /\b(job listings?|careers?|hiring|vacanc(?:y|ies)|jobs? board|evergreen explainer|opinion column)\b/i;
+    const trusted = new Set(['reuters.com','apnews.com','bbc.com','bbc.co.uk','bloomberg.com','ft.com','wsj.com','nytimes.com','theverge.com','techcrunch.com','wired.com','arstechnica.com','technologyreview.com','cnbc.com','forbes.com','venturebeat.com','prnewswire.com','businesswire.com']);
 
-    results = results.filter(r => relevance.test(`${r.title || ''} ${r.content || ''} ${r.url || ''}`));
+    results = results.filter(r => {
+      const title = String(r?.title || '').trim();
+      const content = String(r?.content || '').trim();
+      const urlText = String(r?.url || '');
+      const combined = `${title} ${content} ${urlText}`;
+      if (!relevance.test(combined)) return false;
+      if (!titleEvent.test(title)) return false;
+      if (lowValueTitle.test(title)) return false;
+      if (lowValueContent.test(combined)) return false;
 
-    if (indiaDate) {
-      results = results.filter(r => {
+      if (indiaDate) {
         const published = normalizeDate(r?.published_date);
         const urlDate = getUrlDate(r);
         const textDate = getTextDate(r);
-        const signals = [published, urlDate, textDate].filter(Boolean);
-        // Tavily's publication metadata can be UTC-based while the user is asking for an India calendar date.
-        // Accept an explicit target-date signal. If there is no date signal at all, keep the result because
-        // it already passed Tavily's current-day news window and target-date query. Reject explicit conflicts.
-        if (!signals.length) return true;
-        return signals.includes(indiaDate);
-      });
-    }
+        // Direct article date signals are stronger than Tavily metadata because the latter can be timezone-based.
+        if (urlDate && urlDate !== indiaDate) return false;
+        if (textDate && textDate !== indiaDate) return false;
+        // If no direct date signal exists, keep only results that came from Tavily's current-day news window.
+        // A conflicting metadata date alone is tolerated when the source itself has no conflicting date.
+        if (!urlDate && !textDate && published && published !== indiaDate) return false;
+      }
+      return true;
+    });
 
     const seen = new Set();
     results = results.filter(r => {
-      const key = String(r.url || '').trim().toLowerCase().replace(/\/$/, '') || String(r.title || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().slice(0, 160);
+      const titleKey = String(r?.title || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().slice(0, 180);
+      const urlKey = String(r?.url || '').trim().toLowerCase().replace(/\/$/, '');
+      const key = urlKey || titleKey;
       if (!key || seen.has(key)) return false;
       seen.add(key);
       return true;
     });
 
+    // Prefer primary-source reporting of a concrete event and stronger sources, then fresher explicit dates.
     results.sort((a, b) => {
       const score = r => {
-        const text = `${r.title || ''} ${r.content || ''}`.toLowerCase();
+        const title = String(r?.title || '');
+        const text = `${title} ${r?.content || ''}`;
         const host = getHost(r);
         let s = 0;
         const published = normalizeDate(r?.published_date);
         const urlDate = getUrlDate(r);
         const textDate = getTextDate(r);
-        if (published === indiaDate) s += 8;
-        if (urlDate === indiaDate) s += 5;
-        if (textDate === indiaDate) s += 5;
-        if (highValue.test(text)) s += 4;
-        if (lowValue.test(text)) s -= 10;
+        if (urlDate === indiaDate) s += 8;
+        if (textDate === indiaDate) s += 8;
+        if (published === indiaDate) s += 3;
         if (trusted.has(host)) s += 5;
-        if (/\b(major|million|billion|new model|new product|official|breakthrough)\b/i.test(text)) s += 2;
+        if (titleEvent.test(title)) s += 5;
+        if (/\b(major|million|billion|official|new model|new product|acquisition|funding|series [a-e])\b/i.test(text)) s += 2;
         return s;
       };
       return score(b) - score(a);
