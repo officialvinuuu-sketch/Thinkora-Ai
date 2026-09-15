@@ -205,14 +205,14 @@ app.post("/api/chat", async (req, res) => {
       const results = search.results;
       sources = results.map(r => ({ title: r.title || "Web result", url: r.url || "", content: (r.content || "").slice(0, 2500) })).filter(r => r.url);
       webContext = sources.length
-        ? `\n\nWEB SEARCH RESULTS (retrieved for India date ${search.date}; use these sources when relevant):\n${sources.map((r, i) => `[${i + 1}] ${r.title}\nURL: ${r.url}\nSnippet: ${r.content}`).join("\n\n")}`
+        ? `\n\nWEB SEARCH RESULTS (retrieved for India date ${search.date}; use these sources when relevant):\n${sources.map((r, i) => `[SOURCE ${i + 1}]\nTITLE: ${r.title}\nURL: ${r.url}\nSNIPPET: ${r.content}`).join("\n\n")}`
         : `\n\nWEB SEARCH RESULTS: No useful results were returned for India date ${search.date}. If the user asked for today's/current information, say that current results were unavailable rather than using older information.`;
     }
     const messages = [
       { role: "system", content: SYSTEM_PROMPT },
       ...history.filter(m => m && (m.role === "user" || m.role === "assistant") && typeof m.content === "string"),
       ...(fileContext ? [{ role: "system", content: `The user uploaded a document named ${fileName || "uploaded file"}. Use its extracted text when answering questions about it. If the requested information is not present, say so clearly.\n\nDOCUMENT TEXT:\n${fileContext}` }] : []),
-      ...(webContext ? [{ role: "system", content: `The user explicitly enabled Web Search. Today's date in India is ${searchMeta.date}. Use the retrieved web results to answer current or web-dependent questions. For questions containing today, latest, current, recent, now, or news, do not relabel an older article as today's information. If today's results are unavailable, state that clearly. Prefer the freshest relevant evidence, distinguish facts from uncertainty, and do not invent details. When useful, cite sources in the answer using the source title and URL text.\n${webContext}` }] : []),
+      ...(webContext ? [{ role: "system", content: `The user explicitly enabled Web Search. Today's date in India is ${searchMeta.date}. Use ONLY the supplied Web Search Results as evidence for web-search claims. This is a source-grounded task: do not invent, reconstruct, paraphrase into a new headline, or guess a publication date that is not supported by a supplied source. For a headline/news request, each headline MUST be directly supported by one of the supplied source TITLEs or SNIPPETs. If fewer than five sources support five distinct headlines, provide only the supported number and say that fewer verified results were available. Never create a placeholder or generic source name such as "Daily News". Never invent or guess a URL. If the user asks for an exact source URL, copy the URL exactly from the matching supplied source. For questions containing today, latest, current, recent, now, or news, do not relabel an older article as today's information. If today's results are unavailable, state that clearly. Prefer the freshest relevant evidence, distinguish facts from uncertainty, and do not invent details.\n${webContext}` }] : []),
       { role: "user", content: message }
     ];
     const completion = await hf.chat.completions.create({ model: "openai/gpt-oss-120b:fastest", messages, max_tokens: 1600 });
