@@ -46,6 +46,23 @@ async function tavilyContext(query) {
   return { context, sources };
 }
 
+async function callGemini(model, apiKey, payload) {
+  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
+    body: JSON.stringify(payload)
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const error = new Error(data?.error?.message || `Gemini HTTP ${response.status}`);
+    error.status = response.status;
+    throw error;
+  }
+  const reply = data?.candidates?.[0]?.content?.parts?.map(p => p.text || '').join('').trim();
+  if (!reply) throw new Error('Gemini returned no text.');
+  return reply;
+}
+
 async function handleGemini(req, res) {
   if (req.method !== 'POST') { res.writeHead(405); res.end('Method Not Allowed'); return true; }
   const apiKey = process.env.GEMINI_API_KEY;
@@ -77,17 +94,19 @@ async function handleGemini(req, res) {
       contents: buildGeminiContents(body),
       generationConfig: { temperature: 0.6, maxOutputTokens: 1600 }
     };
-    const response = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
-      body: JSON.stringify(payload)
-    });
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(data?.error?.message || `Gemini HTTP ${response.status}`);
-    const reply = data?.candidates?.[0]?.content?.parts?.map(p => p.text || '').join('').trim();
-    if (!reply) throw new Error('Gemini returned no text.');
+
+    let reply;
+    let modelUsed = 'gemini-2.5-flash';
+    try {
+      reply = await callGemini('gemini-2.5-flash', apiKey, payload);
+    } catch (primaryError) {
+      console.warn('Thinkora Gemini primary model unavailable; trying free-tier fallback:', primaryError.message);
+      reply = await callGemini('gemini-2.5-flash-lite', apiKey, payload);
+      modelUsed = 'gemini-2.5-flash-lite';
+    }
+
     res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-    res.end(JSON.stringify({ reply, sources: search.sources, mode: 'online-gemini' }));
+    res.end(JSON.stringify({ reply, sources: search.sources, mode: 'online-gemini', model: modelUsed }));
   } catch (error) {
     console.error('Thinkora Gemini error:', error);
     res.writeHead(502, { 'Content-Type': 'application/json; charset=utf-8' });
