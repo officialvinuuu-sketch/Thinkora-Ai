@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Thinkora AI — Offline Test</title>
+<style>
+body{margin:0;background:#212121;color:#eee;font-family:Arial,sans-serif;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;box-sizing:border-box}.card{width:min(680px,100%);background:#171717;border:1px solid #333;border-radius:16px;padding:20px;box-sizing:border-box}h1{margin:0 0 8px}.note{color:#aaa;font-size:14px;line-height:1.5}.status{margin:16px 0;padding:12px;border-radius:10px;background:#2b2b2b}.ok{color:#9fdf9f}.bad{color:#ff9a9a}textarea{width:100%;min-height:110px;box-sizing:border-box;background:#2b2b2b;color:#fff;border:1px solid #555;border-radius:10px;padding:12px;font-size:16px;resize:vertical}button{margin-top:10px;border:0;border-radius:10px;padding:11px 16px;background:#fff;color:#111;font-weight:700}pre{white-space:pre-wrap;background:#111;border:1px solid #333;border-radius:10px;padding:12px;line-height:1.5}
+</style>
+</head>
+<body>
+<div class="card">
+<h1>✦ Thinkora AI — Offline Test</h1>
+<div class="note">This temporary page tests whether the Thinkora web app can communicate with the local llama.cpp server running on the same Android phone. It does not change the main Thinkora chat UI.</div>
+<div id="status" class="status">Checking local AI server…</div>
+<textarea id="prompt">Explain artificial intelligence in one short paragraph.</textarea>
+<br><button id="send">Test Offline AI</button>
+<pre id="out">No response yet.</pre>
+</div>
+<script>
+const statusEl=document.getElementById('status');
+const out=document.getElementById('out');
+async function check(){
+  try{
+    const r=await fetch('http://127.0.0.1:8080/health',{cache:'no-store'});
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    const t=await r.text();
+    statusEl.className='status ok';
+    statusEl.textContent='✓ Local llama.cpp server reachable: '+t;
+  }catch(e){
+    statusEl.className='status bad';
+    statusEl.textContent='✗ Local server not reachable from this page: '+e.message;
+  }
+}
+document.getElementById('send').onclick=async()=>{
+  out.textContent='Generating…';
+  try{
+    const r=await fetch('http://127.0.0.1:8080/v1/chat/completions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:[{role:'system',content:'You are Thinkora AI, a helpful and concise assistant.'},{role:'user',content:document.getElementById('prompt').value}],chat_template_kwargs:{enable_thinking:false},max_tokens:128})});
+    const data=await r.json();
+    out.textContent=data?.choices?.[0]?.message?.content||JSON.stringify(data,null,2);
+  }catch(e){out.textContent='Offline connection failed: '+e.message;}
+};
+check();
+</script>
+</body>
+</html>
