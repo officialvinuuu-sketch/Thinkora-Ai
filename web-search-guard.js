@@ -39,7 +39,7 @@ function improveWebAnswer(requestBody) {
   );
   if (webIndex < 0) return;
 
-  const instruction = `\n\nSMART ANSWER MODE: Act like a capable research assistant, not a search-result copier. First understand the user's intent, then use the supplied sources to select the most relevant and freshest evidence. Synthesize the evidence into a concise, natural answer. For news requests, rank items by relevance and recency and remove duplicate or near-duplicate stories. Do not simply echo the search-result order. Do not dump raw snippets or a markdown source table. Use clean numbered bullets when listing multiple developments. Preserve the source's exact headline only when the user asks for the exact headline; otherwise you may summarize it naturally. Do not output raw URLs unless the user explicitly asks for them. If exact source URLs are requested, copy them exactly from the supplied sources and associate each URL with the correct item. Never invent headlines, dates, sources, URLs, or facts. If the supplied sources are insufficient, say so rather than filling gaps. Use only the supplied Web Search Results for web-grounded claims.`;
+  const instruction = `\n\nSMART ANSWER MODE: Act like a capable research assistant, not a search-result copier. First understand the user's intent, then select the most relevant and freshest supplied evidence. For news requests, prioritize genuine current developments reported today over job listings, old incidents, evergreen explainers, or commentary about older events. Rank by relevance and recency and remove duplicate or near-duplicate stories. Synthesize the evidence into a concise, natural answer. Use simple bullet points (•) for multiple developments; do NOT use numbered lists and do NOT repeat the same number. Do not dump raw snippets or a markdown source table. Preserve the source's exact headline only when the user asks for the exact headline; otherwise summarize naturally. Do not output raw URLs unless the user explicitly asks for them. If exact source URLs are requested, copy them exactly from the supplied sources and associate each URL with the correct item. Never invent headlines, dates, sources, URLs, or facts. If the supplied sources are insufficient for a confident answer, say so rather than filling gaps. Use only the supplied Web Search Results for web-grounded claims.`;
   requestBody.messages[webIndex].content += instruction;
 }
 
@@ -68,7 +68,7 @@ global.fetch = async function(input, init) {
   const indiaDate = extractIndiaDate(query);
 
   if (aiNews) {
-    requestBody.query = `${query} Focus only on artificial intelligence, AI companies, AI models, AI products, AI chips, AI research, or AI policy news. Exclude unrelated general world, politics, sports, weather, or military news unless directly about AI. Return only clearly AI-focused news.`.slice(0, 2000);
+    requestBody.query = `${query} Focus only on artificial intelligence, AI companies, AI models, AI products, AI chips, AI research, or AI policy news. Prefer genuine developments reported or announced today. Exclude job listings, old incidents, evergreen explainers, generic opinion, and unrelated general world, politics, sports, weather, or military news unless directly about a new AI development. Return only clearly AI-focused current news.`.slice(0, 2000);
     requestBody.max_results = Math.max(Number(requestBody.max_results) || 5, 10);
     if (indiaDate) delete requestBody.time_range;
   }
@@ -88,20 +88,13 @@ global.fetch = async function(input, init) {
 
     if (indiaDate) {
       results = results.filter(r => {
-        // A dated URL is strong evidence of the article date. Reject it when it conflicts.
         if (hasConflictingUrlDate(r, indiaDate)) return false;
-
-        // A provider publication date is also strong evidence. Do not inspect arbitrary
-        // dates mentioned inside article text because those may refer to older events.
         const published = getPublishedDate(r);
         if (published && published !== indiaDate) return false;
-
-        // Keep undated URLs only when they have no explicit conflicting publication date.
         return true;
       });
     }
 
-    // Remove duplicate URLs and near-duplicate titles while preserving source order.
     const seenUrls = new Set();
     const seenTitleKeys = new Set();
     results = results.filter(r => {
@@ -114,16 +107,19 @@ global.fetch = async function(input, init) {
       return true;
     });
 
-    // Prefer results with an explicit publication date and stronger AI relevance.
+    const exclusion = /\b(job listings?|careers?|hiring|vacanc(?:y|ies)|jobs? board|opinion|column|commentary|explainer|how to|guide)\b/i;
     results.sort((a, b) => {
-      const aDate = getPublishedDate(a) === indiaDate ? 1 : 0;
-      const bDate = getPublishedDate(b) === indiaDate ? 1 : 0;
-      if (aDate !== bDate) return bDate - aDate;
-      const aText = `${a.title || ''} ${a.content || ''}`.toLowerCase();
-      const bText = `${b.title || ''} ${b.content || ''}`.toLowerCase();
-      const terms = ['artificial intelligence', 'generative ai', 'ai model', 'openai', 'anthropic', 'gemini', 'nvidia', 'llm'];
-      const score = text => terms.reduce((n, term) => n + (text.includes(term) ? 1 : 0), 0);
-      return score(bText) - score(aText);
+      const score = result => {
+        const text = `${result.title || ''} ${result.content || ''}`.toLowerCase();
+        let value = 0;
+        if (getPublishedDate(result) === indiaDate) value += 5;
+        if (/\b(announced|launch(?:ed)?|released|unveiled|funding|acquired|partnership|model|chip|policy|research|security|product)\b/i.test(text)) value += 3;
+        if (exclusion.test(text)) value -= 6;
+        const terms = ['artificial intelligence', 'generative ai', 'ai model', 'openai', 'anthropic', 'gemini', 'nvidia', 'llm'];
+        value += terms.reduce((n, term) => n + (text.includes(term) ? 1 : 0), 0);
+        return value;
+      };
+      return score(b) - score(a);
     });
 
     return new Response(JSON.stringify(Object.assign({}, data, { results: results.slice(0, 10) })), {
