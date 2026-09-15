@@ -1,13 +1,23 @@
 const http = require('http');
+const fs = require('fs');
+const path = require('path');
 const { spawn } = require('child_process');
 
 const PORT = Number(process.env.PORT || 10000);
 const INTERNAL_PORT = PORT + 1;
+const integrationPath = path.join(__dirname, 'offline-mode-integration.js');
+const integration = fs.readFileSync(integrationPath, 'utf8');
 const childEnv = { ...process.env, PORT: String(INTERNAL_PORT) };
 const child = spawn(process.execPath, ['-r', './web-search-guard.js', 'server.js'], { env: childEnv, stdio: 'inherit' });
 child.on('exit', code => process.exit(code ?? 1));
 
 const proxy = http.createServer((req, res) => {
+  if (req.url === '/offline-mode-integration.js') {
+    res.writeHead(200, { 'Content-Type': 'text/javascript; charset=utf-8', 'Cache-Control': 'no-store' });
+    res.end(integration);
+    return;
+  }
+
   const opts = { hostname: '127.0.0.1', port: INTERNAL_PORT, path: req.url, method: req.method, headers: { ...req.headers, host: `127.0.0.1:${INTERNAL_PORT}` } };
   const upstream = http.request(opts, response => {
     const chunks = [];
