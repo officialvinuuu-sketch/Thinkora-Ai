@@ -35,7 +35,7 @@ function hasExplicitOldDateInTitle(result, targetDate) {
   if (!targetDate || !title) return false;
   const months = 'January February March April May June July August September October November December'.split(' ');
   const older = new RegExp(`\\b(?:${months.join('|')})\\s+\\d{1,2}(?:st|nd|rd|th)?(?:,)?\\s+20\\d{2}\\b`, 'i');
-  const iso = title.match(/\\b20\\d{2}[-/]\\d{2}[-/]\\d{2}\\b/);
+  const iso = title.match(/\\b20\\d{2}[-\/]\\d{2}[-\/]\\d{2}\\b/);
   if (iso && iso[0] !== targetDate) return true;
   const named = title.match(older);
   if (named) {
@@ -141,7 +141,7 @@ global.fetch = async function(input, init) {
   }
 
   const relevance = /\b(ai|artificial intelligence|machine learning|generative ai|genai|openai|chatgpt|anthropic|gemini|claude|copilot|nvidia|deepmind|llm|large language model|robotics|ai model|ai chip|agentic)\b/i;
-  const eventTitle = /\b(launch(?:es|ed)?|release(?:s|d)?|released|introduc(?:es|ed)|announc(?:es|ed|ement)|unveil(?:s|ed)|acqui(?:res|red)|acquisition|buy(?:s|ing)?|raise(?:s|d)?|funding|financing|partnership|partner(?:s|ed)?|deal|investment|invest(?:s|ed)?|rolls? out|rollout|ships?|shipped|debut(?:s|ed)|secures?|research|study|benchmark|model|chip|product|opens?|publishes?|files?|court|judge|regulation|regulatory|policy|consultation|approval|ruling|lawsuit)\b/i;
+  const eventTitle = /\b(launch(?:es|ed)?|release(?:s|d)?|released|introduc(?:es|ed)|announc(?:es|ed|ement)|unveil(?:s|ed)|acqui(?:res|red)|acquisition|buy(?:s|ing)?|raise(?:s|d)?|funding|financing|partnership|partner(?:s|ed)?|deal|investment|invest(?:s|ed)?|rolls? out|rollout|ships?|shipped|debut(?:s|ed)|secures?|research|researcher|study|benchmark|model|chip|product|opens?|publishes?|files?|court|judge|regulation|regulatory|policy|consultation|approval|ruling|lawsuit|warns?|warning|targets?|calls?|adds?|slows?|plans?|expands?|backs?|supports?|faces?|tests?|deploys?|integrates?|enables?|reveals?|unveils?)\b/i;
   const lowTitle = /\b(opinion|commentary|explainer|guide|how to|what happens when|questions answered|market reaction|stocks?|sentiment|resignation|former (?:president|employee|researcher)|podcast|newsletter|morning bid|slowdown debate)\b/i;
   const lowContent = /\b(job listings?|careers?|hiring|vacanc(?:y|ies)|jobs? board|evergreen explainer|opinion column)\b/i;
   const trusted = new Set(['reuters.com','apnews.com','bbc.com','bbc.co.uk','bloomberg.com','ft.com','wsj.com','nytimes.com','theverge.com','techcrunch.com','wired.com','arstechnica.com','technologyreview.com','cnbc.com','forbes.com','venturebeat.com','prnewswire.com','businesswire.com','apple.com','openai.com','anthropic.com','google.com','blog.google','microsoft.com','blogs.microsoft.com','nvidia.com']);
