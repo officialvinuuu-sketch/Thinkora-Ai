@@ -11,6 +11,26 @@ function extractIndiaDate(query) {
   return match ? match[1] : '';
 }
 
+function normalizeDate(value) {
+  const match = String(value || '').match(/(\d{4})[-\/]?(\d{2})[-\/]?(\d{2})/);
+  return match ? `${match[1]}-${match[2]}-${match[3]}` : '';
+}
+
+function findSourceDate(result) {
+  const published = normalizeDate(result?.published_date);
+  if (published) return published;
+
+  const url = String(result?.url || '');
+  const urlDate = url.match(/(?:^|[^0-9])(20\d{2})[-\/]?(0[1-9]|1[0-2])[-\/]?(0[1-9]|[12]\d|3[01])(?:[^0-9]|$)/);
+  if (urlDate) return `${urlDate[1]}-${urlDate[2]}-${urlDate[3]}`;
+
+  const text = `${result?.title || ''} ${result?.content || ''}`;
+  const textDate = text.match(/\b(20\d{2})[-\/]?(0[1-9]|1[0-2])[-\/]?(0[1-9]|[12]\d|3[01])\b/);
+  if (textDate) return `${textDate[1]}-${textDate[2]}-${textDate[3]}`;
+
+  return '';
+}
+
 global.fetch = async function(input, init) {
   const url = typeof input === 'string' ? input : (input && input.url) || '';
   if (url !== 'https://api.tavily.com/search' || !init || typeof init.body !== 'string') {
@@ -43,11 +63,13 @@ global.fetch = async function(input, init) {
       return relevance.test(text);
     });
 
-    // For an explicit India-date news request, reject results whose source provides a conflicting publication date.
+    // For an explicit India-date news request, reject any result whose supplied
+    // publication/date evidence points to a different calendar date. This also
+    // catches dates embedded in article URLs when published_date is missing.
     if (indiaDate) {
       results = results.filter(r => {
-        if (!r.published_date) return true;
-        return String(r.published_date).slice(0, 10) === indiaDate;
+        const sourceDate = findSourceDate(r);
+        return !sourceDate || sourceDate === indiaDate;
       });
     }
 
