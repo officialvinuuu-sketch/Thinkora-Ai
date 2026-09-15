@@ -35,7 +35,7 @@ function improveWebAnswer(requestBody) {
   );
   if (webIndex < 0) return;
 
-  requestBody.messages[webIndex].content += `\n\nSMART ANSWER MODE: Act like a capable research assistant, not a search-result copier. For news, rank supplied sources by relevance, recency, importance and source quality. Prioritize genuinely new major AI launches, model releases, research, funding, acquisitions, partnerships, products, chips, or policy/safety decisions. Exclude job listings, generic opinion, commentary, resignation posts, old incidents, evergreen explainers and unrelated stories. One article or primary event must produce at most one answer item; never split mentions inside one article into separate developments. Remove duplicate or near-duplicate stories. Use concise natural bullet points, not numbered lists. Do not dump snippets or source tables. Do not invent facts, headlines, dates, sources or URLs. For an explicit date/current-day request, treat a source as current only when its supplied publication date or clearly date-stamped URL matches the requested date. If a source has no date, it may be used only when there is no evidence it is stale. Never relabel a source dated an earlier day as today's news. If exact URLs are requested, copy them exactly from the supplied search results. If fewer genuinely distinct current developments are supported, return fewer rather than filling gaps. Use only the supplied Web Search Results for web-grounded claims.`;
+  requestBody.messages[webIndex].content += `\n\nSMART ANSWER MODE: Act like a capable research assistant, not a search-result copier. For news, rank supplied sources by relevance, recency, importance and source quality. Prioritize genuinely new major AI launches, model releases, research, funding, acquisitions, partnerships, products, chips, or policy/safety decisions. Exclude job listings, generic opinion, commentary, resignation posts, old incidents, evergreen explainers and unrelated stories. One article or primary event must produce at most one answer item; never split mentions inside one article into separate developments. Remove duplicate or near-duplicate stories. Use concise natural bullet points, not numbered lists. Do not dump snippets or source tables. Do not invent facts, headlines, dates, sources or URLs. For an explicit calendar-date request, only use a source when its supplied publication date or clearly date-stamped URL matches the requested date. If the source has no date evidence, exclude it rather than guessing. Never relabel an earlier source as today's news. If exact URLs are requested, copy them exactly from the supplied search results. If fewer genuinely distinct current developments are supported, return fewer rather than filling gaps. Use only the supplied Web Search Results for web-grounded claims.`;
 }
 
 global.fetch = async function(input, init) {
@@ -84,11 +84,10 @@ global.fetch = async function(input, init) {
       results = results.filter(r => {
         const published = normalizeDate(r?.published_date);
         const urlDate = getUrlDate(r);
-        // For an explicit India-date request, reject any source with a conflicting supplied date.
-        // Undated sources are allowed because some publishers omit publication metadata.
-        if (published && published !== indiaDate) return false;
-        if (urlDate && urlDate !== indiaDate) return false;
-        return true;
+        // For an explicit calendar date, require direct date evidence. This prevents older stories from being presented as current.
+        if (published) return published === indiaDate;
+        if (urlDate) return urlDate === indiaDate;
+        return false;
       });
     }
 
