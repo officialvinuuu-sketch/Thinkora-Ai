@@ -7,28 +7,27 @@ function isAiNewsQuery(query) {
 }
 
 function extractIndiaDate(query) {
-  const match = String(query || '').match(/Current date in India:\s*(\d{4}-\d{2}-\d{2})/i);
-  return match ? match[1] : '';
+  const m = String(query || '').match(/Current date in India:\s*(\d{4}-\d{2}-\d{2})/i);
+  return m ? m[1] : '';
 }
 
 function normalizeDate(value) {
-  const match = String(value || '').match(/(\d{4})[-\/]?(\d{2})[-\/]?(\d{2})/);
-  return match ? `${match[1]}-${match[2]}-${match[3]}` : '';
+  const m = String(value || '').match(/(\d{4})[-\/]?(\d{2})[-\/]?(\d{2})/);
+  return m ? `${m[1]}-${m[2]}-${m[3]}` : '';
 }
 
 function getUrlDate(result) {
   const url = String(result?.url || '');
-  const match = url.match(/(?:^|\/)(20\d{2})[\/-](0[1-9]|1[0-2])[\/-](0[1-9]|[12]\d|3[01])(?:\/|[^0-9]|$)/);
-  return match ? `${match[1]}-${match[2]}-${match[3]}` : '';
+  const m = url.match(/(?:^|\/)(20\d{2})[\/-](0[1-9]|1[0-2])[\/-](0[1-9]|[12]\d|3[01])(?:\/|[^0-9]|$)/);
+  return m ? `${m[1]}-${m[2]}-${m[3]}` : '';
 }
 
-function hasConflictingUrlDate(result, indiaDate) {
-  const urlDate = getUrlDate(result);
-  return Boolean(urlDate && indiaDate && urlDate !== indiaDate);
-}
-
-function getPublishedDate(result) {
-  return normalizeDate(result?.published_date);
+function daysFrom(target, base) {
+  if (!target || !base) return null;
+  const a = new Date(`${target}T00:00:00Z`).getTime();
+  const b = new Date(`${base}T00:00:00Z`).getTime();
+  if (!Number.isFinite(a) || !Number.isFinite(b)) return null;
+  return Math.round((b - a) / 86400000);
 }
 
 function getHost(result) {
@@ -44,8 +43,7 @@ function improveWebAnswer(requestBody) {
   );
   if (webIndex < 0) return;
 
-  const instruction = `\n\nSMART ANSWER MODE: Act like a capable research assistant, not a search-result copier. First understand the user's intent, then select the most relevant and freshest supplied evidence. For news requests, prioritize substantive current developments that materially matter to AI: major launches or releases, important model or product announcements, significant research findings, major funding/acquisitions/partnerships, meaningful AI policy or safety decisions, and major company or industry changes. Prefer direct reporting of a new development over job listings, old incidents, evergreen explainers, generic opinion, resignation posts, speculative commentary, or articles whose main event happened earlier. Prefer reputable primary sources and established news outlets when the supplied results contain them. Rank by importance, relevance, source quality and recency, then remove duplicate or near-duplicate stories. Do not simply echo search-result order. One underlying article or event must produce at most one answer item, even if the article mentions several related projects, people, or announcements. Do not turn a secondary mention, example, background reference, hyperlink title, or sidebar item inside one source into a separate development. For every bullet, choose one primary news event and support that bullet from one primary source. If several bullets come from the same source, allow that only when the source clearly reports separate primary announcements; otherwise keep only the strongest primary development from that source. Never count a job listing, conference mention, fellowship mention, or old incident embedded inside another article as a separate current development. When the user asks for five important developments, return up to five genuinely distinct primary developments, not five facts extracted from one article. Synthesize evidence into a concise, natural answer and explain why each item matters when useful. Use simple bullet points (•) for multiple developments; do NOT use numbered lists and do NOT repeat the same number. Do not dump raw snippets or a markdown source table. Preserve the source's exact headline only when the user asks for the exact headline; otherwise summarize naturally. Do not output raw URLs unless the user explicitly asks for them. If exact source URLs are requested, copy them exactly from the supplied sources and associate each URL with the correct item. Never invent headlines, dates, sources, URLs, or facts. IMPORTANT: A supplied source does not need a published_date field to be usable. The search was explicitly performed for today's India date. If a source has no explicit conflicting date, it may be used as current evidence, but never invent or state a publication date that the source does not provide. Reject a source as stale when its supplied publication date, URL date, or source text clearly shows it is from an earlier date. Do not say that no current sources exist merely because publication-date metadata is missing. If the supplied sources are genuinely insufficient for a confident answer, say so rather than filling gaps. Use only the supplied Web Search Results for web-grounded claims.`;
-  requestBody.messages[webIndex].content += instruction;
+  requestBody.messages[webIndex].content += `\n\nSMART ANSWER MODE: Act like a capable research assistant, not a search-result copier. For news, rank supplied sources by relevance, recency, importance and source quality. Prioritize genuinely new major AI launches, model releases, research, funding, acquisitions, partnerships, products, chips, or policy/safety decisions. Exclude job listings, generic opinion, commentary, resignation posts, old incidents, evergreen explainers and unrelated stories. One article or primary event must produce at most one answer item; never split mentions inside one article into separate developments. Remove duplicate or near-duplicate stories. Use concise natural bullet points, not numbered lists. Do not dump snippets or source tables. Do not invent facts, headlines, dates, sources or URLs. A source may be used when it has no published_date if the search was explicitly performed for today's date and there is no clear evidence that it is stale. Do not claim an item was published today unless the supplied evidence supports that. If exact URLs are requested, copy them exactly from the supplied search results. If fewer genuinely distinct current developments are supported, return fewer rather than filling gaps. Use only the supplied Web Search Results for web-grounded claims.`;
 }
 
 global.fetch = async function(input, init) {
@@ -53,87 +51,77 @@ global.fetch = async function(input, init) {
 
   if (url.includes('router.huggingface.co/v1/chat/completions') && init && typeof init.body === 'string') {
     try {
-      const requestBody = JSON.parse(init.body);
-      improveWebAnswer(requestBody);
-      return originalFetch(input, Object.assign({}, init, { body: JSON.stringify(requestBody) }));
-    } catch (_) {
-      return originalFetch(input, init);
-    }
+      const body = JSON.parse(init.body);
+      improveWebAnswer(body);
+      return originalFetch(input, Object.assign({}, init, { body: JSON.stringify(body) }));
+    } catch (_) { return originalFetch(input, init); }
   }
 
   if (url !== 'https://api.tavily.com/search' || !init || typeof init.body !== 'string') {
     return originalFetch(input, init);
   }
 
-  let requestBody;
-  try { requestBody = JSON.parse(init.body); } catch (_) { return originalFetch(input, init); }
+  let body;
+  try { body = JSON.parse(init.body); } catch (_) { return originalFetch(input, init); }
 
-  const query = String(requestBody.query || '');
+  const query = String(body.query || '');
   const aiNews = isAiNewsQuery(query);
   const indiaDate = extractIndiaDate(query);
 
   if (aiNews) {
-    requestBody.query = `${query} Focus only on artificial intelligence, AI companies, AI models, AI products, AI chips, AI research, or AI policy news. Prefer substantive new developments reported or announced today. Prioritize major launches, releases, research, funding, acquisitions, partnerships, policy or safety decisions. Exclude job listings, old incidents, evergreen explainers, generic opinion, resignation posts, speculative commentary, and unrelated general world, politics, sports, weather, or military news unless directly about a new AI development. Return only clearly AI-focused current news.`.slice(0, 2000);
-    requestBody.max_results = Math.max(Number(requestBody.max_results) || 5, 10);
-    if (indiaDate) delete requestBody.time_range;
+    body.query = `${query} Focus only on clearly AI-focused current news. Prefer major new launches, model releases, research, funding, acquisitions, partnerships, products, chips, or policy/safety decisions. Exclude job listings, old incidents, generic opinion, commentary, resignation posts, evergreen explainers and unrelated stories. Return distinct primary developments only.`.slice(0, 2000);
+    body.max_results = Math.max(Number(body.max_results) || 5, 10);
+    // Keep Tavily's day filter. It is UTC-based, so a Sep 14 evening article can still be a Sep 15 India-current story.
+    body.time_range = 'day';
+    body.topic = 'news';
   }
 
-  const response = await originalFetch(input, Object.assign({}, init, { body: JSON.stringify(requestBody) }));
+  const response = await originalFetch(input, Object.assign({}, init, { body: JSON.stringify(body) }));
   if (!aiNews || !response.ok) return response;
 
   try {
     const data = await response.clone().json();
-    const relevance = /\b(ai|artificial intelligence|machine learning|generative ai|genai|openai|chatgpt|anthropic|gemini|claude|copilot|nvidia|deepmind|llm|large language model|robotics|ai model|ai chip)\b/i;
     let results = Array.isArray(data.results) ? data.results : [];
+    const relevance = /\b(ai|artificial intelligence|machine learning|generative ai|genai|openai|chatgpt|anthropic|gemini|claude|copilot|nvidia|deepmind|llm|large language model|robotics|ai model|ai chip)\b/i;
+    const lowValue = /\b(job listings?|careers?|hiring|vacanc(?:y|ies)|jobs? board|opinion|column|commentary|explainer|how to|guide|resignation|exit note|former staff|former researcher|fearmongering|investor sentiment|market volatility)\b/i;
+    const highValue = /\b(announc(?:e|ed|es|ement)|launch(?:ed|es)?|release(?:d|s)?|unveil(?:ed|s)?|debut(?:ed|s)?|funding|raised|acqui(?:re|red|res)|partnership|deal|model|chip|policy|regulation|research|study|benchmark|security|product|rollout|update|open[- ]source|investment)\b/i;
+    const trusted = new Set(['reuters.com','apnews.com','bbc.com','bbc.co.uk','bloomberg.com','ft.com','wsj.com','nytimes.com','theverge.com','techcrunch.com','wired.com','arstechnica.com','technologyreview.com','cnbc.com','forbes.com','venturebeat.com']);
 
-    results = results.filter(r => {
-      const text = `${r.title || ''} ${r.content || ''} ${r.url || ''}`;
-      return relevance.test(text);
-    });
+    results = results.filter(r => relevance.test(`${r.title || ''} ${r.content || ''} ${r.url || ''}`));
 
     if (indiaDate) {
       results = results.filter(r => {
-        if (hasConflictingUrlDate(r, indiaDate)) return false;
-        const published = getPublishedDate(r);
-        if (published && published !== indiaDate) return false;
+        const published = normalizeDate(r?.published_date);
+        const urlDate = getUrlDate(r);
+        // Reject clearly old sources. Allow the immediately previous UTC calendar day because it can still be "today" in India.
+        if (published && daysFrom(published, indiaDate) !== null && daysFrom(published, indiaDate) > 1) return false;
+        if (urlDate && daysFrom(urlDate, indiaDate) !== null && daysFrom(urlDate, indiaDate) > 1) return false;
         return true;
       });
     }
 
-    const seenUrls = new Set();
-    const seenTitleKeys = new Set();
+    const seen = new Set();
     results = results.filter(r => {
-      const normalizedUrl = String(r.url || '').trim().toLowerCase().replace(/\/$/, '');
-      const titleKey = String(r.title || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().split(/\s+/).slice(0, 14).join(' ');
-      if (normalizedUrl && seenUrls.has(normalizedUrl)) return false;
-      if (titleKey && seenTitleKeys.has(titleKey)) return false;
-      if (normalizedUrl) seenUrls.add(normalizedUrl);
-      if (titleKey) seenTitleKeys.add(titleKey);
+      const key = String(r.url || '').trim().toLowerCase().replace(/\/$/, '') || String(r.title || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().slice(0, 160);
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
       return true;
     });
 
-    const lowValue = /\b(job listings?|careers?|hiring|vacanc(?:y|ies)|jobs? board|opinion|column|commentary|explainer|how to|guide|resignation|exit note|former staff|former researcher|warns of|fearmongering|investor sentiment|stock (?:market|shares?)|market volatility)\b/i;
-    const highValue = /\b(announc(?:e|ed|es|ement)|launch(?:ed|es)?|release(?:d|s)?|unveil(?:ed|s)?|debut(?:ed|s)?|funding|raised|acqui(?:re|red|res)|partnership|deal|model|chip|policy|regulation|research|study|benchmark|security|product|rollout|update|open[- ]source|investment)\b/i;
-    const majorSignal = /\b(billion|million|major|breakthrough|new model|new product|world's first|first-of-its-kind|largest|significant|official)\b/i;
-    const trustedHosts = new Set(['reuters.com','apnews.com','bbc.com','bbc.co.uk','bloomberg.com','ft.com','wsj.com','nytimes.com','theverge.com','techcrunch.com','wired.com','arstechnica.com','technologyreview.com','cnbc.com','forbes.com','venturebeat.com']);
-    const primaryHosts = /(^|\.)((openai|anthropic|deepmind|google|microsoft|nvidia|apple|meta|amazon|aws|huggingface|lenovo)\.com)$/i;
-
     results.sort((a, b) => {
-      const score = result => {
-        const text = `${result.title || ''} ${result.content || ''}`.toLowerCase();
-        const host = getHost(result);
-        let value = 0;
-        if (getPublishedDate(result) === indiaDate) value += 5;
-        if (getUrlDate(result) === indiaDate) value += 2;
-        if (highValue.test(text)) value += 4;
-        if (majorSignal.test(text)) value += 2;
-        if (lowValue.test(text)) value -= 8;
-        if (trustedHosts.has(host)) value += 5;
-        if (primaryHosts.test(host)) value += 6;
-        if (/\b(announced today|launched today|released today|published today|today)\b/i.test(text)) value += 2;
-        const terms = ['artificial intelligence', 'generative ai', 'ai model', 'openai', 'anthropic', 'gemini', 'nvidia', 'llm'];
-        value += terms.reduce((n, term) => n + (text.includes(term) ? 1 : 0), 0);
-        return value;
+      const score = r => {
+        const text = `${r.title || ''} ${r.content || ''}`.toLowerCase();
+        const host = getHost(r);
+        let s = 0;
+        const published = normalizeDate(r?.published_date);
+        const urlDate = getUrlDate(r);
+        if (published === indiaDate) s += 5;
+        if (urlDate === indiaDate) s += 2;
+        if (highValue.test(text)) s += 4;
+        if (lowValue.test(text)) s -= 10;
+        if (trusted.has(host)) s += 5;
+        if (/\b(major|million|billion|new model|new product|official|breakthrough)\b/i.test(text)) s += 2;
+        return s;
       };
       return score(b) - score(a);
     });
@@ -143,7 +131,5 @@ global.fetch = async function(input, init) {
       statusText: response.statusText,
       headers: response.headers
     });
-  } catch (_) {
-    return response;
-  }
+  } catch (_) { return response; }
 };
