@@ -35,7 +35,7 @@ function hasExplicitOldDateInTitle(result, targetDate) {
   if (!targetDate || !title) return false;
   const months = 'January February March April May June July August September October November December'.split(' ');
   const older = new RegExp(`\\b(?:${months.join('|')})\\s+\\d{1,2}(?:st|nd|rd|th)?(?:,)?\\s+20\\d{2}\\b`, 'i');
-  const iso = title.match(/\\b20\\d{2}[-\/]\\d{2}[-\/]\d{2}\\b/);
+  const iso = title.match(/\\b20\\d{2}[-\\/]\\d{2}[-\\/]\\d{2}\\b/);
   if (iso && iso[0] !== targetDate) return true;
   const named = title.match(older);
   if (named) {
@@ -76,6 +76,28 @@ function titleSimilarity(a, b) {
   return intersection / Math.max(aa.size, bb.size);
 }
 
+function normalizeWebAssistantText(text) {
+  let out = String(text || '')
+    .replace(/<br\s*\/?\s*>/gi, '\n')
+    .replace(/\r/g, '')
+    .replace(/^\s*\|?\s*#\s*\|.*$/gim, '')
+    .replace(/^\s*\|?\s*-{2,}\s*\|.*$/gim, '')
+    .replace(/^\s*\|?\s*Development[^\n]*$/gim, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+
+  const lines = out.split('\n');
+  let number = 0;
+  out = lines.map(line => {
+    const m = line.match(/^\s*\d+\.\s+(.*)$/);
+    if (!m) return line;
+    number += 1;
+    return `${number}. ${m[1].trim()}`;
+  }).join('\n');
+
+  return out;
+}
+
 function improveWebAnswer(requestBody) {
   if (!Array.isArray(requestBody.messages)) return;
   const webIndex = requestBody.messages.findIndex(m =>
@@ -84,7 +106,23 @@ function improveWebAnswer(requestBody) {
   );
   if (webIndex < 0) return;
 
-  requestBody.messages[webIndex].content += `\n\nTHINKORA SMART WEB ANSWER MODE: Act like a careful research assistant, not a search-result summarizer. For current AI news, select only concrete, meaningful developments supported directly by the supplied sources. One real-world event = one answer item, even if multiple sources cover it. Prefer primary announcements and high-quality reporting; use secondary sources for corroboration, not as separate events. For explicit dates, use the target date as a hard freshness requirement. Do not include an article whose published date resolves to an older India calendar date. Do not use a URL date as proof of publication date. Never invent facts, dates, headlines, source names or URLs.\n\nOUTPUT FORMAT RULES: Do NOT use a Markdown table. Do NOT output HTML such as <br>. Do NOT output a literal table separator such as |---|. Do NOT write labels like 'URL:' on a separate malformed line. Answer with a clean numbered list. Each item must be: '1. **Exact source-supported headline** — 1-2 sentence explanation. Source: exact URL'. Copy the source URL exactly from the supplied result. Keep the headline meaning faithful to the supplied TITLE/SNIPPET. If fewer than five distinct verified developments are supported, return only those and say 'Fewer than five verified developments were available.' Never fill the list with weak or duplicate items. Give the direct answer first and keep it concise.`;
+  requestBody.messages[webIndex].content += `\n\nTHINKORA SMART WEB ANSWER MODE: Act like a careful research assistant, not a search-result summarizer. For current AI news, select only concrete, meaningful developments supported directly by the supplied sources. One real-world event = one answer item, even if multiple sources cover it. Prefer primary announcements and high-quality reporting; use secondary sources for corroboration, not as separate events. For explicit dates, use the target date as a hard freshness requirement. Do not include an article whose published date resolves to an older India calendar date. Do not use a URL date as proof of publication date. Never invent facts, dates, headlines, source names or URLs.\n\nHEADLINE AND SOURCE RULES: For each selected item, use the supplied source TITLE as the headline with only trivial punctuation cleanup; do not invent a new headline. The explanation must describe the same event as that TITLE. Copy the exact URL from that same supplied source. Do not combine facts from unrelated sources into one item. Do not use a weak company press release when a major independent report covers the same event. Avoid market-reaction stories, investor-sentiment stories, generic industry commentary, and small vendor announcements unless they represent a clearly major AI development.\n\nOUTPUT FORMAT RULES: Do NOT use a Markdown table. Do NOT output HTML such as <br>. Do NOT output a literal table separator such as |---|. Do NOT write labels like 'URL:' on a separate malformed line. Answer with a clean numbered list starting at 1 and incrementing by one. Each item must be: '1. **Exact source title** — 1-2 sentence explanation. Source: exact URL'. If fewer than five distinct verified major developments are supported, return only those and say 'Fewer than five verified developments were available.' Never fill the list with weak or duplicate items. Give the direct answer first and keep it concise.`;
+}
+
+async function normalizeCompletionResponse(response) {
+  try {
+    const data = await response.clone().json();
+    const choice = data?.choices?.[0]?.message;
+    if (choice && typeof choice.content === 'string') {
+      choice.content = normalizeWebAssistantText(choice.content);
+      return new Response(JSON.stringify(data), {
+        status: response.status,
+        statusText: response.statusText,
+        headers: response.headers
+      });
+    }
+  } catch (_) {}
+  return response;
 }
 
 global.fetch = async function(input, init) {
@@ -93,8 +131,12 @@ global.fetch = async function(input, init) {
   if (url.includes('router.huggingface.co/v1/chat/completions') && init && typeof init.body === 'string') {
     try {
       const body = JSON.parse(init.body);
+      const isWeb = Array.isArray(body.messages) && body.messages.some(m =>
+        m && m.role === 'system' && typeof m.content === 'string' && m.content.includes('The user explicitly enabled Web Search')
+      );
       improveWebAnswer(body);
-      return originalFetch(input, Object.assign({}, init, { body: JSON.stringify(body) }));
+      const response = await originalFetch(input, Object.assign({}, init, { body: JSON.stringify(body) }));
+      return isWeb ? normalizeCompletionResponse(response) : response;
     } catch (_) { return originalFetch(input, init); }
   }
 
@@ -114,7 +156,7 @@ global.fetch = async function(input, init) {
     ? ` Target date: ${indiaDate}. Return only developments newly reported, announced, released, published, or officially updated on that date. Do not treat yesterday's results as today's.`
     : '';
 
-  const common = ` Focus on major concrete AI developments. Prioritize launches, model releases, product releases, research, funding, acquisitions, partnerships, infrastructure/chips, rollouts, court decisions, AI regulation, and major enterprise AI moves. Exclude generic explainers, opinion, commentary, jobs, market-reaction stories, old incidents, podcasts about older stories, event-session listings, and unrelated news. One result should represent one distinct real-world development.${datePhrase}`;
+  const common = ` Focus on major concrete AI developments. Prioritize launches, model releases, product releases, research, funding, acquisitions, partnerships, infrastructure/chips, rollouts, court decisions, AI regulation, and major enterprise AI moves. Exclude generic explainers, opinion, commentary, jobs, market-reaction stories, investor-sentiment stories, stock-market stories, old incidents, podcasts about older stories, event-session listings, small vendor press releases, and unrelated news. One result should represent one distinct real-world development.${datePhrase}`;
   const queries = [
     `${query}${common} Find major AI company, model, product, agent, and platform developments.`,
     `${query}${common} Find major AI research, infrastructure, chips, funding, acquisition, partnership, and enterprise developments.`,
@@ -152,8 +194,8 @@ global.fetch = async function(input, init) {
   }
 
   const relevance = /\b(ai|artificial intelligence|machine learning|generative ai|genai|openai|chatgpt|anthropic|gemini|claude|copilot|nvidia|deepmind|llm|large language model|robotics|ai model|ai chip|agentic)\b/i;
-  const lowTitle = /\b(opinion|commentary|explainer|guide|how to|what happens when|questions answered|market reaction|stocks?|sentiment|resignation|former (?:president|employee|researcher)|podcast|newsletter|morning bid|slowdown debate)\b/i;
-  const lowContent = /\b(job listings?|careers?|hiring|vacanc(?:y|ies)|jobs? board|evergreen explainer|opinion column)\b/i;
+  const lowTitle = /\b(opinion|commentary|explainer|guide|how to|what happens when|questions answered|market reaction|investors? nervous|investor sentiment|stocks?|share price|sentiment|resignation|former (?:president|employee|researcher)|podcast|newsletter|morning bid|slowdown debate|spending slowdown|industry warnings)\b/i;
+  const lowContent = /\b(job listings?|careers?|hiring|vacanc(?:y|ies)|jobs? board|evergreen explainer|opinion column|investor anxiety|market anxiety|stock market reaction)\b/i;
   const trusted = new Set(['reuters.com','apnews.com','bbc.com','bbc.co.uk','bloomberg.com','ft.com','wsj.com','nytimes.com','theverge.com','techcrunch.com','wired.com','arstechnica.com','technologyreview.com','cnbc.com','forbes.com','venturebeat.com','prnewswire.com','businesswire.com','apple.com','openai.com','anthropic.com','google.com','blog.google','microsoft.com','blogs.microsoft.com','nvidia.com']);
 
   results = results.filter(r => {
@@ -190,8 +232,9 @@ global.fetch = async function(input, init) {
       const publishedIndia = parsePublishedIndiaDate(r?.published_date);
       if (publishedIndia === indiaDate) s += 8;
       if (trusted.has(host)) s += 7;
-      if (/\b(launch|release|released|acquisition|funding|research|chip|product|regulation|ruling|partnership|warns?|warning|targets?|calls?|adds?|plans?|expands?|deploys?|integrates?|enables?|reveals?|unveils?|announces?)\b/i.test(title)) s += 5;
-      if (/\b(major|million|billion|official|new model|new product|acquisition|funding|series [a-e])\b/i.test(`${title} ${content}`)) s += 2;
+      if (/\b(launch|release|released|acquisition|funding|research|chip|product|regulation|ruling|partnership|warns?|warning|targets?|calls?|adds?|plans?|expands?|deploys?|integrates?|enables?|reveals?|unveils?|announces?|commits?|ships?)\b/i.test(title)) s += 5;
+      if (/\b(major|million|billion|official|new model|new product|acquisition|funding|series [a-e]|initiative|rollout)\b/i.test(`${title} ${content}`)) s += 2;
+      if (host === 'prnewswire.com' || host === 'businesswire.com') s -= 4;
       if (content.length > 250) s += 1;
       return s;
     };
