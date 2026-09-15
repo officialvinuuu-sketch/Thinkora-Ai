@@ -34,8 +34,17 @@ function findSourceDates(result) {
   if (urlDate) dates.push(`${urlDate[1]}-${urlDate[2]}-${urlDate[3]}`);
 
   const text = `${result?.title || ''} ${result?.content || ''}`;
-  const textDate = text.match(/\b(20\d{2})[-\/]?(0[1-9]|1[0-2])[-\/]?(0[1-9]|[12]\d|3[01])\b/);
-  if (textDate) dates.push(`${textDate[1]}-${textDate[2]}-${textDate[3]}`);
+  const numericDate = text.match(/\b(20\d{2})[-\/]?(0[1-9]|1[0-2])[-\/]?(0[1-9]|[12]\d|3[01])\b/);
+  if (numericDate) dates.push(`${numericDate[1]}-${numericDate[2]}-${numericDate[3]}`);
+
+  const writtenDate = text.match(/\b(January|February|March|April|May|June|July|August|September|October|November|December)\s+(0?[1-9]|[12]\d|3[01]),?\s+(20\d{2})\b/i);
+  if (writtenDate) {
+    const month = {
+      january:'01', february:'02', march:'03', april:'04', may:'05', june:'06',
+      july:'07', august:'08', september:'09', october:'10', november:'11', december:'12'
+    }[writtenDate[1].toLowerCase()];
+    dates.push(`${writtenDate[3]}-${month}-${String(writtenDate[2]).padStart(2, '0')}`);
+  }
 
   return [...new Set(dates)];
 }
@@ -54,7 +63,7 @@ global.fetch = async function(input, init) {
   const indiaDate = extractIndiaDate(query);
 
   if (aiNews) {
-    requestBody.query = `${query} Focus only on artificial intelligence, AI companies, AI models, AI products, AI chips, AI research, or AI policy news. Exclude unrelated general world, politics, sports, weather, or military news unless directly about AI.`.slice(0, 2000);
+    requestBody.query = `${query} Focus only on artificial intelligence, AI companies, AI models, AI products, AI chips, AI research, or AI policy news. Exclude unrelated general world, politics, sports, weather, or military news unless directly about AI. Return only results that are clearly about AI.`.slice(0, 2000);
     if (indiaDate) delete requestBody.time_range;
   }
 
@@ -73,10 +82,11 @@ global.fetch = async function(input, init) {
 
     if (indiaDate) {
       results = results.filter(r => {
-        // Hard reject a URL whose explicit article date conflicts with India today.
         if (hasConflictingUrlDate(r, indiaDate)) return false;
         const sourceDates = findSourceDates(r);
-        return sourceDates.every(date => date === indiaDate);
+        // For a strict "today" request, require at least one explicit source date
+        // and reject anything whose known source date is not India today.
+        return sourceDates.length > 0 && sourceDates.every(date => date === indiaDate);
       });
     }
 
