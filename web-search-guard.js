@@ -16,19 +16,20 @@ function normalizeDate(value) {
   return match ? `${match[1]}-${match[2]}-${match[3]}` : '';
 }
 
-function findSourceDate(result) {
+function findSourceDates(result) {
+  const dates = [];
   const published = normalizeDate(result?.published_date);
-  if (published) return published;
+  if (published) dates.push(published);
 
   const url = String(result?.url || '');
   const urlDate = url.match(/(?:^|[^0-9])(20\d{2})[-\/]?(0[1-9]|1[0-2])[-\/]?(0[1-9]|[12]\d|3[01])(?:[^0-9]|$)/);
-  if (urlDate) return `${urlDate[1]}-${urlDate[2]}-${urlDate[3]}`;
+  if (urlDate) dates.push(`${urlDate[1]}-${urlDate[2]}-${urlDate[3]}`);
 
   const text = `${result?.title || ''} ${result?.content || ''}`;
   const textDate = text.match(/\b(20\d{2})[-\/]?(0[1-9]|1[0-2])[-\/]?(0[1-9]|[12]\d|3[01])\b/);
-  if (textDate) return `${textDate[1]}-${textDate[2]}-${textDate[3]}`;
+  if (textDate) dates.push(`${textDate[1]}-${textDate[2]}-${textDate[3]}`);
 
-  return '';
+  return [...new Set(dates)];
 }
 
 global.fetch = async function(input, init) {
@@ -46,7 +47,6 @@ global.fetch = async function(input, init) {
 
   if (aiNews) {
     requestBody.query = `${query} Focus only on artificial intelligence, AI companies, AI models, AI products, AI chips, AI research, or AI policy news. Exclude unrelated general world, politics, sports, weather, or military news unless directly about AI.`.slice(0, 2000);
-    // Tavily's day window is UTC-based; the explicit India date in the query is safer for India-day news.
     if (indiaDate) delete requestBody.time_range;
   }
 
@@ -63,13 +63,10 @@ global.fetch = async function(input, init) {
       return relevance.test(text);
     });
 
-    // For an explicit India-date news request, reject any result whose supplied
-    // publication/date evidence points to a different calendar date. This also
-    // catches dates embedded in article URLs when published_date is missing.
     if (indiaDate) {
       results = results.filter(r => {
-        const sourceDate = findSourceDate(r);
-        return !sourceDate || sourceDate === indiaDate;
+        const sourceDates = findSourceDates(r);
+        return sourceDates.every(date => date === indiaDate);
       });
     }
 
