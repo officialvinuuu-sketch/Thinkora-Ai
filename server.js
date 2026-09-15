@@ -90,16 +90,26 @@ async function extractScannedPdfText(buffer, originalName) {
 async function tavilySearch(query) {
   const apiKey = process.env.TAVILY_API_KEY;
   if (!apiKey) throw new Error("TAVILY_API_KEY is not configured");
+
+  const normalized = query.toLowerCase();
+  const newsIntent = /\b(news|headline|headlines|breaking|updates|update|latest news|current events)\b/.test(normalized);
+  const freshIntent = /\b(today|tonight|latest|recent|just now|right now|this week|this morning|current)\b/.test(normalized);
+
+  const searchOptions = {
+    query: query.slice(0, 2000),
+    search_depth: "basic",
+    max_results: 5,
+    include_answer: false,
+    include_raw_content: false
+  };
+
+  if (newsIntent) searchOptions.topic = "news";
+  if (freshIntent) searchOptions.time_range = newsIntent || freshIntent ? (normalized.includes("this week") ? "week" : "day") : undefined;
+
   const response = await fetch("https://api.tavily.com/search", {
     method: "POST",
     headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` },
-    body: JSON.stringify({
-      query: query.slice(0, 2000),
-      search_depth: "basic",
-      max_results: 5,
-      include_answer: false,
-      include_raw_content: false
-    })
+    body: JSON.stringify(searchOptions)
   });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(data?.detail || data?.error || `Tavily HTTP ${response.status}`);
@@ -235,7 +245,7 @@ window.fetch=function(resource,options){
 };
 function fixFileUpload(){if(!window.readDoc||!window.filePicker)return;window.readDoc=async function(f){selectedImage=null;selectedDoc=f;docContext='';docName='';window.thinkoraDocError='';preview.classList.remove('show');preview.removeAttribute('src');attachmentName.textContent=f.name+' — reading…';attachment.classList.add('show');attachMenu.classList.remove('open');let fd=new FormData();fd.append('file',f,f.name);window.thinkoraDocPromise=(async function(){try{let r=await fetch('/api/files',{method:'POST',body:fd});let d={};try{d=await r.json()}catch(_){throw Error('Server returned an invalid response.')}if(!r.ok)throw Error(d.error||'Could not read file');if(!d.text)throw Error('Thinkora AI could not extract readable content from this file.');docContext=d.text;docName=d.name||f.name;attachmentName.textContent=f.name+' — ready';return d}catch(e){window.thinkoraDocError=e.message||'Could not read file';attachmentName.textContent='Upload failed: '+window.thinkoraDocError;selectedDoc=f;throw e}finally{window.thinkoraDocPromise=null}})();try{await window.thinkoraDocPromise}catch(_){}};filePicker.onchange=function(e){let f=e.target.files&&e.target.files[0];if(f)window.readDoc(f)}}
 window.addEventListener('load',function(){installWebSearch();fixFileUpload();var originalSend=window.sendMessage;if(originalSend&&window.send){window.sendMessage=async function(){if(window.thinkoraDocPromise){attachmentName.textContent=(selectedDoc&&selectedDoc.name||'File')+' — waiting…';try{await window.thinkoraDocPromise}catch(_){return}}if(window.thinkoraDocError){attachmentName.textContent='Upload failed: '+window.thinkoraDocError;return}return originalSend()};send.onclick=function(){window.sendMessage()};input.onkeydown=function(e){if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();window.sendMessage()}}}});
-function addCopy(){document.querySelectorAll('.more-menu').forEach(function(menu){if(menu.querySelector('[data-thinkora-copy]'))return;var b=document.createElement('button');b.className='more-item';b.setAttribute('data-thinkora-copy','1');b.innerHTML='<svg class="icon" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M6 15H5a2 2 0 0 1 2-2V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v1"/></svg><span>Copy</span>';b.addEventListener('click',function(){var message=menu.closest('.message');var content=message&&message.querySelector('.content');if(content){navigator.clipboard.writeText(content.innerText||'').catch(function(){});}menu.classList.remove('open');});menu.insertBefore(b,menu.firstChild);});}
+function addCopy(){document.querySelectorAll('.more-menu').forEach(function(menu){if(menu.querySelector('[data-thinkora-copy]'))return;var b=document.createElement('button');b.className='more-item';b.setAttribute('data-thinkora-copy','1');b.innerHTML='<svg class="icon" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M6 15H5a2 2 0 0 1 2-2V5a2 2 0 0 1 2 2h8a2 2 0 0 1 2 2v1"/></svg><span>Copy</span>';b.addEventListener('click',function(){var message=menu.closest('.message');var content=message&&message.querySelector('.content');if(content){navigator.clipboard.writeText(content.innerText||'').catch(function(){});}menu.classList.remove('open');});menu.insertBefore(b,menu.firstChild);});}
 new MutationObserver(function(){installWebSearch();addCopy()}).observe(document.body,{childList:true,subtree:true});
 addCopy();
 })();</script>`;
