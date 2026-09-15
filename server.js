@@ -87,6 +87,25 @@ async function extractScannedPdfText(buffer, originalName) {
   return { text: parts.join("\n").trim(), pagesRead: pageCount, totalPages: pdf.numPages };
 }
 
+async function tavilySearch(query) {
+  const apiKey = process.env.TAVILY_API_KEY;
+  if (!apiKey) throw new Error("TAVILY_API_KEY is not configured");
+  const response = await fetch("https://api.tavily.com/search", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` },
+    body: JSON.stringify({
+      query: query.slice(0, 2000),
+      search_depth: "basic",
+      max_results: 5,
+      include_answer: false,
+      include_raw_content: false
+    })
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data?.detail || data?.error || `Tavily HTTP ${response.status}`);
+  return Array.isArray(data.results) ? data.results : [];
+}
+
 app.get("/api/health", (req, res) => {
   res.json({ status: "ok", app: "Thinkora AI", developer: "INNOCENT VINUU" });
 });
@@ -150,19 +169,33 @@ app.post("/api/chat", async (req, res) => {
   const history = Array.isArray(req.body?.messages) ? req.body.messages : [];
   const fileContext = typeof req.body?.fileContext === "string" ? req.body.fileContext.slice(0, 80000) : "";
   const fileName = typeof req.body?.fileName === "string" ? req.body.fileName.slice(0, 200) : "";
+  const webSearch = req.body?.webSearch === true;
   if (!message) return res.status(400).json({ error: "Message is required." });
   try {
+    let webContext = "";
+    let sources = [];
+    if (webSearch) {
+      const results = await tavilySearch(message);
+      sources = results.map(r => ({ title: r.title || "Web result", url: r.url || "", content: (r.content || "").slice(0, 2500) })).filter(r => r.url);
+      webContext = sources.length
+        ? `\n\nWEB SEARCH RESULTS (current web information; use these sources when relevant):\n${sources.map((r, i) => `[${i + 1}] ${r.title}\nURL: ${r.url}\nSnippet: ${r.content}`).join("\n\n")}`
+        : "\n\nWEB SEARCH RESULTS: No useful results were returned. Say that clearly rather than inventing current information.";
+    }
     const messages = [
       { role: "system", content: SYSTEM_PROMPT },
       ...history.filter(m => m && (m.role === "user" || m.role === "assistant") && typeof m.content === "string"),
       ...(fileContext ? [{ role: "system", content: `The user uploaded a document named ${fileName || "uploaded file"}. Use its extracted text when answering questions about it. If the requested information is not present, say so clearly.\n\nDOCUMENT TEXT:\n${fileContext}` }] : []),
+      ...(webContext ? [{ role: "system", content: `The user explicitly enabled Web Search. Use the retrieved web results to answer current or web-dependent questions. Prefer the freshest relevant evidence, distinguish facts from uncertainty, and do not invent details. When useful, cite sources in the answer using the source title and URL text.\n${webContext}` }] : []),
       { role: "user", content: message }
     ];
     const completion = await hf.chat.completions.create({ model: "openai/gpt-oss-120b:fastest", messages, max_tokens: 1600 });
-    res.json({ reply: completion.choices?.[0]?.message?.content || "I could not generate a response." });
+    res.json({ reply: completion.choices?.[0]?.message?.content || "I could not generate a response.", sources });
   } catch (error) {
     console.error("Thinkora AI error:", error);
-    res.status(500).json({ error: "Thinkora AI could not process your request right now." });
+    const msg = webSearch && /TAVILY|Tavily|HTTP 4\d\d|HTTP 5\d\d/i.test(error.message || "")
+      ? "Thinkora Web Search is temporarily unavailable. Your normal AI chat is still available."
+      : "Thinkora AI could not process your request right now.";
+    res.status(500).json({ error: msg });
   }
 });
 
@@ -175,7 +208,37 @@ app.get(/.*/, (req, res) => {
 .response-actions > .response-action { display:none !important; }
 .response-actions > .more-wrap { display:inline-flex !important; }
 .message-actions { display:none !important; }
-</style><script>(function(){function fixFileUpload(){if(!window.readDoc||!window.filePicker)return;window.readDoc=async function(f){selectedImage=null;selectedDoc=f;docContext='';docName='';window.thinkoraDocError='';preview.classList.remove('show');preview.removeAttribute('src');attachmentName.textContent=f.name+' — reading…';attachment.classList.add('show');attachMenu.classList.remove('open');let fd=new FormData();fd.append('file',f,f.name);window.thinkoraDocPromise=(async function(){try{let r=await fetch('/api/files',{method:'POST',body:fd});let d={};try{d=await r.json()}catch(_){throw Error('Server returned an invalid response.')}if(!r.ok)throw Error(d.error||'Could not read file');if(!d.text)throw Error('Thinkora AI could not extract readable content from this file.');docContext=d.text;docName=d.name||f.name;attachmentName.textContent=f.name+' — ready';return d}catch(e){window.thinkoraDocError=e.message||'Could not read file';attachmentName.textContent='Upload failed: '+window.thinkoraDocError;selectedDoc=f;throw e}finally{window.thinkoraDocPromise=null}})();try{await window.thinkoraDocPromise}catch(_){}};filePicker.onchange=function(e){let f=e.target.files&&e.target.files[0];if(f)window.readDoc(f)}}window.addEventListener('load',function(){fixFileUpload();var originalSend=window.sendMessage;if(originalSend&&window.send){window.sendMessage=async function(){if(window.thinkoraDocPromise){attachmentName.textContent=(selectedDoc&&selectedDoc.name||'File')+' — waiting…';try{await window.thinkoraDocPromise}catch(_){return}}if(window.thinkoraDocError){attachmentName.textContent='Upload failed: '+window.thinkoraDocError;return}return originalSend()};send.onclick=function(){window.sendMessage()};input.onkeydown=function(e){if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();window.sendMessage()}}}});function addCopy(){document.querySelectorAll('.more-menu').forEach(function(menu){if(menu.querySelector('[data-thinkora-copy]'))return;var b=document.createElement('button');b.className='more-item';b.setAttribute('data-thinkora-copy','1');b.innerHTML='<svg class="icon" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M6 15H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v1"/></svg><span>Copy</span>';b.addEventListener('click',function(){var message=menu.closest('.message');var content=message&&message.querySelector('.content');if(content){navigator.clipboard.writeText(content.innerText||'').catch(function(){});}menu.classList.remove('open');});menu.insertBefore(b,menu.firstChild);});}new MutationObserver(addCopy).observe(document.body,{childList:true,subtree:true});addCopy();})();</script>`;
+.web-search-row{display:flex;align-items:center;gap:8px;margin:0 0 7px 6px}
+.web-search-toggle{border:1px solid #555;background:#292929;color:#aaa;border-radius:10px;padding:7px 11px;font-size:12px;display:inline-flex;align-items:center;gap:7px}
+.web-search-toggle.active{background:#3a3a3a;color:#fff;border-color:#777}
+.web-search-dot{width:7px;height:7px;border-radius:50%;background:#777;display:inline-block}
+.web-search-toggle.active .web-search-dot{background:#fff}
+.web-search-note{font-size:10px;color:#777}
+</style><script>(function(){
+function installWebSearch(){
+  if(document.getElementById('thinkoraWebSearchRow'))return;
+  var shell=document.querySelector('.input-shell');
+  if(!shell)return;
+  var row=document.createElement('div');row.className='web-search-row';row.id='thinkoraWebSearchRow';
+  row.innerHTML='<button type="button" class="web-search-toggle" id="thinkoraWebSearch"><span class="web-search-dot"></span><span>Web Search</span></button><span class="web-search-note">Uses free web-search credits</span>';
+  shell.parentNode.insertBefore(row,shell);
+  var btn=document.getElementById('thinkoraWebSearch');
+  window.thinkoraWebSearch=false;
+  btn.addEventListener('click',function(){window.thinkoraWebSearch=!window.thinkoraWebSearch;btn.classList.toggle('active',window.thinkoraWebSearch);});
+}
+var originalFetch=window.fetch.bind(window);
+window.fetch=function(resource,options){
+  var url=typeof resource==='string'?resource:(resource&&resource.url)||'';
+  if(window.thinkoraWebSearch&&url.indexOf('/api/chat')!==-1&&options&&typeof options.body==='string'){
+    try{var body=JSON.parse(options.body);body.webSearch=true;options=Object.assign({},options,{body:JSON.stringify(body)});}catch(_){}}
+  return originalFetch(resource,options);
+};
+function fixFileUpload(){if(!window.readDoc||!window.filePicker)return;window.readDoc=async function(f){selectedImage=null;selectedDoc=f;docContext='';docName='';window.thinkoraDocError='';preview.classList.remove('show');preview.removeAttribute('src');attachmentName.textContent=f.name+' — reading…';attachment.classList.add('show');attachMenu.classList.remove('open');let fd=new FormData();fd.append('file',f,f.name);window.thinkoraDocPromise=(async function(){try{let r=await fetch('/api/files',{method:'POST',body:fd});let d={};try{d=await r.json()}catch(_){throw Error('Server returned an invalid response.')}if(!r.ok)throw Error(d.error||'Could not read file');if(!d.text)throw Error('Thinkora AI could not extract readable content from this file.');docContext=d.text;docName=d.name||f.name;attachmentName.textContent=f.name+' — ready';return d}catch(e){window.thinkoraDocError=e.message||'Could not read file';attachmentName.textContent='Upload failed: '+window.thinkoraDocError;selectedDoc=f;throw e}finally{window.thinkoraDocPromise=null}})();try{await window.thinkoraDocPromise}catch(_){}};filePicker.onchange=function(e){let f=e.target.files&&e.target.files[0];if(f)window.readDoc(f)}}
+window.addEventListener('load',function(){installWebSearch();fixFileUpload();var originalSend=window.sendMessage;if(originalSend&&window.send){window.sendMessage=async function(){if(window.thinkoraDocPromise){attachmentName.textContent=(selectedDoc&&selectedDoc.name||'File')+' — waiting…';try{await window.thinkoraDocPromise}catch(_){return}}if(window.thinkoraDocError){attachmentName.textContent='Upload failed: '+window.thinkoraDocError;return}return originalSend()};send.onclick=function(){window.sendMessage()};input.onkeydown=function(e){if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();window.sendMessage()}}}});
+function addCopy(){document.querySelectorAll('.more-menu').forEach(function(menu){if(menu.querySelector('[data-thinkora-copy]'))return;var b=document.createElement('button');b.className='more-item';b.setAttribute('data-thinkora-copy','1');b.innerHTML='<svg class="icon" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M6 15H5a2 2 0 0 1 2-2V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v1"/></svg><span>Copy</span>';b.addEventListener('click',function(){var message=menu.closest('.message');var content=message&&message.querySelector('.content');if(content){navigator.clipboard.writeText(content.innerText||'').catch(function(){});}menu.classList.remove('open');});menu.insertBefore(b,menu.firstChild);});}
+new MutationObserver(function(){installWebSearch();addCopy()}).observe(document.body,{childList:true,subtree:true});
+addCopy();
+})();</script>`;
   res.type("html").send(file.replace("</head>", polish + "</head>"));
 });
 
