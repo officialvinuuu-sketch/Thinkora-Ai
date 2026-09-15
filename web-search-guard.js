@@ -35,7 +35,7 @@ function hasExplicitOldDateInTitle(result, targetDate) {
   if (!targetDate || !title) return false;
   const months = 'January February March April May June July August September October November December'.split(' ');
   const older = new RegExp(`\\b(?:${months.join('|')})\\s+\\d{1,2}(?:st|nd|rd|th)?(?:,)?\\s+20\\d{2}\\b`, 'i');
-  const iso = title.match(/\\b20\d{2}[-\/]\d{2}[-\/]\d{2}\\b/);
+  const iso = title.match(/\\b20\\d{2}[-\/]\\d{2}[-\/]\d{2}\\b/);
   if (iso && iso[0] !== targetDate) return true;
   const named = title.match(older);
   if (named) {
@@ -84,7 +84,7 @@ function improveWebAnswer(requestBody) {
   );
   if (webIndex < 0) return;
 
-  requestBody.messages[webIndex].content += `\n\nTHINKORA SMART WEB ANSWER MODE: Act like a careful research assistant, not a search-result summarizer. First understand the user's intent, then select only the strongest evidence. For current AI news, a qualifying item must describe a concrete, meaningful development: a launch, release, research result, funding round, acquisition, partnership, infrastructure/chip announcement, rollout, court/regulatory decision, or other clearly new event. Do not promote opinion pieces, generic explainers, market reaction, job listings, background stories, old incidents, podcasts about older news, event-session listings, or articles that merely mention AI. Do not turn a snippet into a new headline. Keep the source's actual headline meaning intact. One real-world event must produce at most one answer item even when several sources cover it. Prefer primary announcements and high-quality reporting; use secondary sources for corroboration, not as separate events. For a request for the top 5, return up to 5 genuinely distinct high-value developments, not five just to fill the quota. If only 2 or 3 are well supported, return only those and say fewer verified developments were available. For explicit dates, use the target date as a hard freshness requirement. Publisher timestamps and URLs can use different time zones, so do not reject a current-day result solely because its timestamp or URL uses a neighboring calendar date. However, reject a result whose published date resolves to an older calendar day in India, and reject any article TITLE that explicitly states an older date. Never invent facts, dates, headlines, rankings, sources or URLs. Use only supplied Web Search Results for web-grounded claims. Give a direct answer first, then concise supporting details. Use natural headings and bullets when useful, avoid repetitive disclaimers, and clearly distinguish verified facts from uncertainty.`;
+  requestBody.messages[webIndex].content += `\n\nTHINKORA SMART WEB ANSWER MODE: Act like a careful research assistant, not a search-result summarizer. For current AI news, select only concrete, meaningful developments supported directly by the supplied sources. One real-world event = one answer item, even if multiple sources cover it. Prefer primary announcements and high-quality reporting; use secondary sources for corroboration, not as separate events. For explicit dates, use the target date as a hard freshness requirement. Do not include an article whose published date resolves to an older India calendar date. Do not use a URL date as proof of publication date. Never invent facts, dates, headlines, source names or URLs.\n\nOUTPUT FORMAT RULES: Do NOT use a Markdown table. Do NOT output HTML such as <br>. Do NOT output a literal table separator such as |---|. Do NOT write labels like 'URL:' on a separate malformed line. Answer with a clean numbered list. Each item must be: '1. **Exact source-supported headline** — 1-2 sentence explanation. Source: exact URL'. Copy the source URL exactly from the supplied result. Keep the headline meaning faithful to the supplied TITLE/SNIPPET. If fewer than five distinct verified developments are supported, return only those and say 'Fewer than five verified developments were available.' Never fill the list with weak or duplicate items. Give the direct answer first and keep it concise.`;
 }
 
 global.fetch = async function(input, init) {
@@ -111,21 +111,23 @@ global.fetch = async function(input, init) {
   if (!aiNews) return originalFetch(input, init);
 
   const datePhrase = indiaDate
-    ? ` Target date: ${indiaDate}. Return only developments newly reported, announced, released, published, or officially updated on that date. Do not treat older news as today's news.`
+    ? ` Target date: ${indiaDate}. Return only developments newly reported, announced, released, published, or officially updated on that date. Do not treat yesterday's results as today's.`
     : '';
 
-  const common = ` Focus on major concrete AI developments. Prioritize launches, model releases, product releases, research, funding, acquisitions, partnerships, infrastructure/chips, rollouts, court decisions, and AI regulation. Exclude generic explainers, opinion, commentary, job listings, market-reaction stories, old incidents, podcasts about older stories, and unrelated news. One result should represent one distinct real-world development.${datePhrase}`;
+  const common = ` Focus on major concrete AI developments. Prioritize launches, model releases, product releases, research, funding, acquisitions, partnerships, infrastructure/chips, rollouts, court decisions, AI regulation, and major enterprise AI moves. Exclude generic explainers, opinion, commentary, jobs, market-reaction stories, old incidents, podcasts about older stories, event-session listings, and unrelated news. One result should represent one distinct real-world development.${datePhrase}`;
   const queries = [
-    `${query}${common} Find the most important AI company and product developments.`,
-    `${query}${common} Find major AI research, infrastructure, funding, acquisition, and partnership developments.`,
-    `${query}${common} Find major AI policy, regulation, legal, safety, and platform developments.`
+    `${query}${common} Find major AI company, model, product, agent, and platform developments.`,
+    `${query}${common} Find major AI research, infrastructure, chips, funding, acquisition, partnership, and enterprise developments.`,
+    `${query}${common} Find major AI policy, regulation, legal, safety, privacy, and court developments.`,
+    `${query}${common} Find important AI launches and newly announced AI tools, services, and deployments.`,
+    `${query}${common} Find important AI industry developments from high-quality technology and business reporting.`
   ];
 
   const requests = queries.map(q => {
     const body = Object.assign({}, baseBody, {
       query: q.slice(0, 2000),
       search_depth: 'basic',
-      max_results: 6,
+      max_results: 8,
       include_answer: false,
       include_raw_content: false,
       topic: 'news',
@@ -188,7 +190,7 @@ global.fetch = async function(input, init) {
       const publishedIndia = parsePublishedIndiaDate(r?.published_date);
       if (publishedIndia === indiaDate) s += 8;
       if (trusted.has(host)) s += 7;
-      if (/\b(launch|release|released|acquisition|funding|research|chip|product|regulation|ruling|partnership|warns?|warning|targets?|calls?|adds?|slows?|plans?|expands?|backs?|supports?|faces?|tests?|deploys?|integrates?|enables?|reveals?|unveils?)\b/i.test(title)) s += 5;
+      if (/\b(launch|release|released|acquisition|funding|research|chip|product|regulation|ruling|partnership|warns?|warning|targets?|calls?|adds?|plans?|expands?|deploys?|integrates?|enables?|reveals?|unveils?|announces?)\b/i.test(title)) s += 5;
       if (/\b(major|million|billion|official|new model|new product|acquisition|funding|series [a-e])\b/i.test(`${title} ${content}`)) s += 2;
       if (content.length > 250) s += 1;
       return s;
@@ -196,7 +198,7 @@ global.fetch = async function(input, init) {
     return score(b) - score(a);
   });
 
-  const data = Object.assign({}, successful.data || {}, { results: results.slice(0, 12) });
+  const data = Object.assign({}, successful.data || {}, { results: results.slice(0, 20) });
   return new Response(JSON.stringify(data), {
     status: successful.response.status,
     statusText: successful.response.statusText,
