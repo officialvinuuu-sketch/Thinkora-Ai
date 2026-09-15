@@ -46,21 +46,39 @@ async function tavilyContext(query) {
   return { context, sources };
 }
 
+function isTransientGeminiError(error) {
+  return [408, 429, 500, 502, 503, 504].includes(Number(error?.status));
+}
+
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
 async function callGemini(model, apiKey, payload) {
-  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
-    body: JSON.stringify(payload)
-  });
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    const error = new Error(data?.error?.message || `Gemini HTTP ${response.status}`);
-    error.status = response.status;
-    throw error;
+  let lastError;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
+        body: JSON.stringify(payload)
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        const error = new Error(data?.error?.message || `Gemini HTTP ${response.status}`);
+        error.status = response.status;
+        throw error;
+      }
+      const reply = data?.candidates?.[0]?.content?.parts?.map(p => p.text || '').join('').trim();
+      if (!reply) throw new Error('Gemini returned no text.');
+      return reply;
+    } catch (error) {
+      lastError = error;
+      if (!isTransientGeminiError(error) || attempt === 2) throw error;
+      await sleep(700 * (attempt + 1));
+    }
   }
-  const reply = data?.candidates?.[0]?.content?.parts?.map(p => p.text || '').join('').trim();
-  if (!reply) throw new Error('Gemini returned no text.');
-  return reply;
+  throw lastError || new Error('Gemini request failed.');
 }
 
 async function handleGemini(req, res) {
@@ -92,7 +110,7 @@ async function handleGemini(req, res) {
     const payload = {
       systemInstruction: { parts: [{ text: systemInstruction }] },
       contents: buildGeminiContents(body),
-      generationConfig: { temperature: 0.6, maxOutputTokens: 1600 }
+      generationConfig: { temperature: 0.6, maxOutputTokens: 8192 }
     };
 
     let reply;
