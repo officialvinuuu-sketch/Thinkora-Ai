@@ -22,6 +22,24 @@ function getUrlDate(result) {
   return m ? `${m[1]}-${m[2]}-${m[3]}` : '';
 }
 
+function getTextDate(result) {
+  const text = `${result?.title || ''} ${result?.content || ''}`;
+  const months = 'January February March April May June July August September October November December'.split(' ');
+  const monthPattern = months.join('|');
+  const long = text.match(new RegExp(`\\b(${monthPattern})\\s+(0?[1-9]|[12]\\d|3[01])(?:st|nd|rd|th)?(?:,)?\\s+(20\\d{2})\\b`, 'i'));
+  if (long) {
+    const month = months.findIndex(m => m.toLowerCase() === long[1].toLowerCase()) + 1;
+    return `${long[3]}-${String(month).padStart(2, '0')}-${String(long[2]).padStart(2, '0')}`;
+  }
+  const short = text.match(new RegExp(`\\b(0?[1-9]|[12]\\d|3[01])\\s+(${monthPattern})(?:,)?\\s+(20\\d{2})\\b`, 'i'));
+  if (short) {
+    const month = months.findIndex(m => m.toLowerCase() === short[2].toLowerCase()) + 1;
+    return `${short[3]}-${String(month).padStart(2, '0')}-${String(short[1]).padStart(2, '0')}`;
+  }
+  const iso = text.match(/\b(20\d{2})[-\/](0[1-9]|1[0-2])[-\/](0[1-9]|[12]\d|3[01])\b/);
+  return iso ? `${iso[1]}-${iso[2]}-${iso[3]}` : '';
+}
+
 function getHost(result) {
   try { return new URL(String(result?.url || '')).hostname.toLowerCase().replace(/^www\./, ''); }
   catch (_) { return ''; }
@@ -35,7 +53,7 @@ function improveWebAnswer(requestBody) {
   );
   if (webIndex < 0) return;
 
-  requestBody.messages[webIndex].content += `\n\nSMART ANSWER MODE: Act like a capable research assistant, not a search-result copier. For news, rank supplied sources by relevance, recency, importance and source quality. Prioritize genuinely new major AI launches, model releases, research, funding, acquisitions, partnerships, products, chips, or policy/safety decisions. Exclude job listings, generic opinion, commentary, resignation posts, old incidents, evergreen explainers and unrelated stories. One article or primary event must produce at most one answer item; never split mentions inside one article into separate developments. Remove duplicate or near-duplicate stories. Use concise natural bullet points, not numbered lists. Do not dump snippets or source tables. Do not invent facts, headlines, dates, sources or URLs. For an explicit calendar-date request, only use a source when its supplied publication date or clearly date-stamped URL matches the requested date. If the source has no date evidence, exclude it rather than guessing. Never relabel an earlier source as today's news. If exact URLs are requested, copy them exactly from the supplied search results. If fewer genuinely distinct current developments are supported, return fewer rather than filling gaps. Use only the supplied Web Search Results for web-grounded claims.`;
+  requestBody.messages[webIndex].content += `\n\nSMART ANSWER MODE: Act like a capable research assistant, not a search-result copier. For news, rank supplied sources by relevance, recency, importance and source quality. Prioritize genuinely new major AI launches, model releases, research, funding, acquisitions, partnerships, products, chips, or policy/safety decisions. Exclude job listings, generic opinion, commentary, resignation posts, old incidents, evergreen explainers and unrelated stories. One article or primary event must produce at most one answer item; never split mentions inside one article into separate developments. Remove duplicate or near-duplicate stories. Use concise natural bullet points, not numbered lists. Do not dump snippets or source tables. Do not invent facts, headlines, dates, sources or URLs. For an explicit calendar-date request, only use a source when its supplied publication date, clearly date-stamped URL, or explicit date in the supplied title/snippet matches the requested date. If the source has no date evidence, exclude it rather than guessing. Never relabel an earlier source as today's news. If exact URLs are requested, copy them exactly from the supplied search results. If fewer genuinely distinct current developments are supported, return fewer rather than filling gaps. Use only the supplied Web Search Results for web-grounded claims.`;
 }
 
 global.fetch = async function(input, init) {
@@ -84,10 +102,12 @@ global.fetch = async function(input, init) {
       results = results.filter(r => {
         const published = normalizeDate(r?.published_date);
         const urlDate = getUrlDate(r);
-        // For an explicit calendar date, require direct date evidence. This prevents older stories from being presented as current.
+        const textDate = getTextDate(r);
+        // For an explicit calendar date, accept direct metadata, a date-stamped URL, or an explicit date in the supplied title/snippet.
+        // This avoids dropping legitimate current articles when Tavily omits published_date metadata.
         if (published) return published === indiaDate;
         if (urlDate) return urlDate === indiaDate;
-        return false;
+        return textDate === indiaDate;
       });
     }
 
@@ -106,8 +126,10 @@ global.fetch = async function(input, init) {
         let s = 0;
         const published = normalizeDate(r?.published_date);
         const urlDate = getUrlDate(r);
+        const textDate = getTextDate(r);
         if (published === indiaDate) s += 8;
         if (urlDate === indiaDate) s += 3;
+        if (textDate === indiaDate) s += 3;
         if (highValue.test(text)) s += 4;
         if (lowValue.test(text)) s -= 10;
         if (trusted.has(host)) s += 5;
