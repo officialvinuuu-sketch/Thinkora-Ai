@@ -6,9 +6,10 @@ const PORT = Number(process.env.PORT || 10000);
 const root = __dirname;
 const index = fs.readFileSync(path.join(root, "index.html"), "utf8");
 const integration = fs.readFileSync(path.join(root, "offline-mode-integration.js"), "utf8");
-const previewHtml = index.replace("</head>", `<script>\n${integration}\n</script></head>`);
+const pwa = `<link rel="manifest" href="/manifest.webmanifest"><meta name="theme-color" content="#171717"><script>if("serviceWorker" in navigator){window.addEventListener("load",()=>navigator.serviceWorker.register("/sw.js").catch(()=>{}));}</script>`;
+const previewHtml = index.replace("</head>", `${pwa}<script>\n${integration}\n</script></head>`);
 
-const mime = { ".html":"text/html; charset=utf-8", ".js":"text/javascript; charset=utf-8", ".css":"text/css; charset=utf-8", ".json":"application/json; charset=utf-8", ".png":"image/png", ".jpg":"image/jpeg", ".jpeg":"image/jpeg", ".svg":"image/svg+xml", ".ico":"image/x-icon" };
+const mime = { ".html":"text/html; charset=utf-8", ".js":"text/javascript; charset=utf-8", ".css":"text/css; charset=utf-8", ".json":"application/json; charset=utf-8", ".webmanifest":"application/manifest+json; charset=utf-8", ".png":"image/png", ".jpg":"image/jpeg", ".jpeg":"image/jpeg", ".svg":"image/svg+xml", ".ico":"image/x-icon" };
 
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
@@ -23,7 +24,7 @@ const server = http.createServer((req, res) => {
     return;
   }
   if (url.pathname === "/" || url.pathname === "/index.html") {
-    res.writeHead(200, { "Content-Type":"text/html; charset=utf-8" });
+    res.writeHead(200, { "Content-Type":"text/html; charset=utf-8", "Cache-Control":"no-store" });
     res.end(previewHtml);
     return;
   }
@@ -32,7 +33,7 @@ const server = http.createServer((req, res) => {
   if (!filePath.startsWith(root + path.sep)) { res.writeHead(403); res.end("Forbidden"); return; }
   fs.stat(filePath, (err, stat) => {
     if (err || !stat.isFile()) { res.writeHead(404); res.end("Not found"); return; }
-    res.writeHead(200, { "Content-Type":mime[path.extname(filePath).toLowerCase()] || "application/octet-stream" });
+    res.writeHead(200, { "Content-Type":mime[path.extname(filePath).toLowerCase()] || "application/octet-stream", "Cache-Control":"no-cache" });
     fs.createReadStream(filePath).pipe(res);
   });
 });
