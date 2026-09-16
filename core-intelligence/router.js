@@ -1,10 +1,10 @@
-// Thinkora Core — Universal AI Router foundation.
-// This module defines one provider contract and deterministic provider selection.
-// It is intentionally provider-agnostic: actual network calls are wired in a later step.
+// Thinkora Core — Universal AI Router runtime foundation.
+// One normalized request enters the router; provider adapters execute it.
+// Adapters stay outside this module so provider credentials and transport remain isolated.
 
 const { PROVIDERS, normalizeMode } = require('./config');
 
-const ROUTER_VERSION = '1.0.0';
+const ROUTER_VERSION = '1.1.0';
 
 function normalizeRequest(input = {}) {
   const messages = Array.isArray(input.messages)
@@ -24,14 +24,9 @@ function normalizeRequest(input = {}) {
 }
 
 function chooseProvider(request) {
-  const mode = request.mode;
-
-  if (mode === 'offline') return PROVIDERS.offline;
-
-  // Online is the default for Auto and explicit Online mode.
-  // Specialized capabilities are represented here so future providers can
-  // be selected without changing the public request contract.
-  if (request.hasImage) return PROVIDERS.online;
+  if (request.mode === 'offline') return PROVIDERS.offline;
+  // Auto and explicit Online currently use the production Gemini adapter.
+  // More online providers can be added here without changing the request contract.
   return PROVIDERS.online;
 }
 
@@ -49,9 +44,25 @@ function createResult({ reply = '', provider = null, model = '', sources = [], s
   });
 }
 
+async function execute(input, adapters = {}) {
+  const request = normalizeRequest(input);
+  const provider = chooseProvider(request);
+  const adapter = adapters[provider.id];
+  if (typeof adapter !== 'function') {
+    const error = new Error(`No adapter configured for provider: ${provider.id}`);
+    error.code = 'PROVIDER_ADAPTER_UNAVAILABLE';
+    error.status = 503;
+    throw error;
+  }
+
+  const result = await adapter(request, provider);
+  return createResult({ ...(result || {}), provider });
+}
+
 module.exports = {
   ROUTER_VERSION,
   normalizeRequest,
   chooseProvider,
-  createResult
+  createResult,
+  execute
 };
