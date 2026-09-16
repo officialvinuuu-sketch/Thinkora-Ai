@@ -1,6 +1,6 @@
 const assert = require('assert');
 const { PROVIDERS } = require('./config');
-const { normalizeRequest, chooseProvider, createResult, ROUTER_VERSION } = require('./router');
+const { normalizeRequest, chooseProvider, createResult, execute, ROUTER_VERSION } = require('./router');
 
 const request = normalizeRequest({
   message: '  Hello Thinkora  ',
@@ -21,7 +21,6 @@ assert.equal(request.webSearch, true);
 assert.equal(request.hasFile, true);
 assert.equal(request.fileName, 'test.txt');
 assert.equal(chooseProvider(request).id, PROVIDERS.online.id);
-
 assert.equal(chooseProvider(normalizeRequest({ mode: 'offline', message: 'hello' })).id, PROVIDERS.offline.id);
 assert.equal(chooseProvider(normalizeRequest({ mode: 'invalid', message: 'hello' })).id, PROVIDERS.online.id);
 
@@ -41,4 +40,27 @@ assert.equal(result.streamed, true);
 assert.equal(result.fallback, false);
 assert.equal(result.routerVersion, ROUTER_VERSION);
 
-console.log('Universal AI Router foundation tests: PASS');
+(async () => {
+  const online = await execute(
+    { message: 'hello', mode: 'online' },
+    { [PROVIDERS.online.id]: async () => ({ reply: 'online reply', model: 'test-online' }) }
+  );
+  assert.equal(online.reply, 'online reply');
+  assert.equal(online.provider, PROVIDERS.online.id);
+  assert.equal(online.mode, 'online');
+
+  const offline = await execute(
+    { message: 'hello', mode: 'offline' },
+    { [PROVIDERS.offline.id]: async () => ({ reply: 'offline reply', model: 'test-offline' }) }
+  );
+  assert.equal(offline.reply, 'offline reply');
+  assert.equal(offline.provider, PROVIDERS.offline.id);
+  assert.equal(offline.mode, 'offline');
+
+  let missingAdapter = false;
+  try { await execute({ message: 'hello', mode: 'online' }, {}); }
+  catch (error) { missingAdapter = error.code === 'PROVIDER_ADAPTER_UNAVAILABLE' && error.status === 503; }
+  assert.equal(missingAdapter, true);
+
+  console.log('Universal AI Router execution tests: PASS');
+})().catch(error => { console.error(error); process.exitCode = 1; });
