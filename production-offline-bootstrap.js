@@ -2,6 +2,9 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
+const { execute: executeRouter } = require('./core-intelligence/router');
+const { PROVIDERS } = require('./core-intelligence/config');
+const { createOnlineAdapter } = require('./core-intelligence/provider-adapters');
 
 const PORT = Number(process.env.PORT || 10000);
 const INTERNAL_PORT = PORT + 1;
@@ -106,6 +109,19 @@ function buildPayload(body, search) {
   return { systemInstruction: { parts: [{ text: systemInstruction }] }, contents: buildGeminiContents(body), generationConfig: { temperature: 0.6, maxOutputTokens: 8192 } };
 }
 
+function createGeminiAdapter({ apiKey, payload, primaryModel, fallbackModel }) {
+  return createOnlineAdapter({
+    execute: async () => {
+      try {
+        return { reply: await callGemini(primaryModel, apiKey, payload), model: primaryModel };
+      } catch (primaryError) {
+        console.warn(`Thinkora Gemini primary model unavailable; trying fallback: ${primaryError.message}`);
+        return { reply: await callGemini(fallbackModel, apiKey, payload), model: fallbackModel, fallback: true };
+      }
+    }
+  });
+}
+
 async function handleGemini(req, res) {
   if (req.method !== 'POST') { res.writeHead(405); res.end('Method Not Allowed'); return true; }
   const apiKey = process.env.GEMINI_API_KEY;
@@ -116,10 +132,10 @@ async function handleGemini(req, res) {
   if (!message) { res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' }); res.end(JSON.stringify({ error: 'Message is required.' })); return true; }
   try {
     let search = { context: '', sources: [] }; if (body.webSearch === true) search = await tavilyContext(message);
-    const payload = buildPayload(body, search); let reply, modelUsed = 'gemini-3.5-flash-lite';
-    try { reply = await callGemini('gemini-3.5-flash-lite', apiKey, payload); }
-    catch (primaryError) { console.warn('Thinkora Gemini primary model unavailable; trying free-tier fallback:', primaryError.message); reply = await callGemini('gemini-3.1-flash-lite', apiKey, payload); modelUsed = 'gemini-3.1-flash-lite'; }
-    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' }); res.end(JSON.stringify({ reply, sources: search.sources, mode: 'online-gemini', model: modelUsed }));
+    const payload = buildPayload({ ...body, message }, search);
+    const adapter = createGeminiAdapter({ apiKey, payload, primaryModel: 'gemini-3.5-flash-lite', fallbackModel: 'gemini-3.1-flash-lite' });
+    const routed = await executeRouter({ ...body, message, mode: 'online' }, { [PROVIDERS.online.id]: adapter });
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' }); res.end(JSON.stringify({ reply: routed.reply, sources: search.sources, mode: 'online-gemini', model: routed.model, fallback: routed.fallback, routerVersion: routed.routerVersion }));
   } catch (error) { console.error('Thinkora Gemini error:', error); res.writeHead(502, { 'Content-Type': 'application/json; charset=utf-8' }); res.end(JSON.stringify({ error: error.message || 'Gemini request failed.' })); }
   return true;
 }
