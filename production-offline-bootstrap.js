@@ -8,7 +8,7 @@ const INTERNAL_PORT = PORT + 1;
 const integrationPath = path.join(__dirname, 'offline-mode-integration.js');
 const integration = fs.readFileSync(integrationPath, 'utf8');
 const childEnv = { ...process.env, PORT: String(INTERNAL_PORT) };
-const child = spawn(process.execPath, ['-r', './web-search-guard.js', 'server.js'], { env: childEnv, stdio: 'inherit' });
+const child = spawn(process.execPath, ['-r', './optional-provider-guard.js', '-r', './web-search-guard.js', 'server.js'], { env: childEnv, stdio: 'inherit' });
 child.on('exit', code => process.exit(code ?? 1));
 
 const THINKORA_SYSTEM = 'You are Thinkora AI, a professional, helpful and intelligent AI assistant. Answer clearly, accurately and naturally. Your identity is Thinkora AI. Never claim to be ChatGPT or another company AI. If you do not know something, say so rather than inventing facts.';
@@ -46,29 +46,16 @@ async function tavilyContext(query) {
   return { context, sources };
 }
 
-function isTransientGeminiError(error) {
-  return [408, 429, 500, 502, 503, 504].includes(Number(error?.status));
-}
-
-function sleep(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
+function isTransientGeminiError(error) { return [408, 429, 500, 502, 503, 504].includes(Number(error?.status)); }
+function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
 
 async function callGemini(model, apiKey, payload) {
   let lastError;
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
-        body: JSON.stringify(payload)
-      });
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey }, body: JSON.stringify(payload) });
       const data = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        const error = new Error(data?.error?.message || `Gemini HTTP ${response.status}`);
-        error.status = response.status;
-        throw error;
-      }
+      if (!response.ok) { const error = new Error(data?.error?.message || `Gemini HTTP ${response.status}`); error.status = response.status; throw error; }
       const reply = data?.candidates?.[0]?.content?.parts?.map(p => p.text || '').join('').trim();
       if (!reply) throw new Error('Gemini returned no text.');
       return reply;
@@ -82,219 +69,98 @@ async function callGemini(model, apiKey, payload) {
 }
 
 async function callGeminiStream(model, apiKey, payload, res) {
-  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
-    body: JSON.stringify(payload)
-  });
-  if (!response.ok) {
-    const data = await response.json().catch(() => ({}));
-    const error = new Error(data?.error?.message || `Gemini HTTP ${response.status}`);
-    error.status = response.status;
-    throw error;
-  }
+  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey }, body: JSON.stringify(payload) });
+  if (!response.ok) { const data = await response.json().catch(() => ({})); const error = new Error(data?.error?.message || `Gemini HTTP ${response.status}`); error.status = response.status; throw error; }
   if (!response.body) throw new Error('Gemini streaming response has no body.');
-
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
-  let buffer = '';
-  let sentText = false;
+  let buffer = '', sentText = false;
   try {
     while (true) {
       const { value, done } = await reader.read();
       if (done) break;
       buffer += decoder.decode(value, { stream: true });
-      const events = buffer.split(/\r?\n\r?\n/);
-      buffer = events.pop() || '';
-      for (const event of events) {
-        for (const line of event.split(/\r?\n/)) {
-          if (!line.startsWith('data:')) continue;
-          const raw = line.slice(5).trim();
-          if (!raw || raw === '[DONE]') continue;
-          let data;
-          try { data = JSON.parse(raw); } catch { continue; }
-          const text = data?.candidates?.[0]?.content?.parts?.map(p => p.text || '').join('') || '';
-          if (text) {
-            sentText = true;
-            res.write(`data: ${JSON.stringify({ type: 'delta', text })}\n\n`);
-          }
-        }
+      const events = buffer.split(/\r?\n\r?\n/); buffer = events.pop() || '';
+      for (const event of events) for (const line of event.split(/\r?\n/)) {
+        if (!line.startsWith('data:')) continue;
+        const raw = line.slice(5).trim(); if (!raw || raw === '[DONE]') continue;
+        let data; try { data = JSON.parse(raw); } catch { continue; }
+        const text = data?.candidates?.[0]?.content?.parts?.map(p => p.text || '').join('') || '';
+        if (text) { sentText = true; res.write(`data: ${JSON.stringify({ type: 'delta', text })}\n\n`); }
       }
     }
     buffer += decoder.decode();
-    if (buffer.trim()) {
-      for (const line of buffer.split(/\r?\n/)) {
-        if (!line.startsWith('data:')) continue;
-        const raw = line.slice(5).trim();
-        if (!raw || raw === '[DONE]') continue;
-        try {
-          const data = JSON.parse(raw);
-          const text = data?.candidates?.[0]?.content?.parts?.map(p => p.text || '').join('') || '';
-          if (text) { sentText = true; res.write(`data: ${JSON.stringify({ type: 'delta', text })}\n\n`); }
-        } catch {}
-      }
+    for (const line of buffer.split(/\r?\n/)) {
+      if (!line.startsWith('data:')) continue;
+      const raw = line.slice(5).trim(); if (!raw || raw === '[DONE]') continue;
+      try { const data = JSON.parse(raw); const text = data?.candidates?.[0]?.content?.parts?.map(p => p.text || '').join('') || ''; if (text) { sentText = true; res.write(`data: ${JSON.stringify({ type: 'delta', text })}\n\n`); } } catch {}
     }
-  } catch (error) {
-    error.streamedText = sentText;
-    throw error;
-  } finally {
-    reader.releaseLock();
-  }
+  } catch (error) { error.streamedText = sentText; throw error; }
+  finally { reader.releaseLock(); }
   if (!sentText) throw new Error('Gemini returned no text.');
   return { sentText };
 }
 
 function buildPayload(body, search) {
   const systemInstruction = `${THINKORA_SYSTEM}${search.context ? '\n\nThe user explicitly enabled Web Search. Use the supplied search results as evidence. Never invent URLs, headlines, dates, or facts. If the results do not support an answer, say so clearly.' : ''}${search.context}`;
-  return {
-    systemInstruction: { parts: [{ text: systemInstruction }] },
-    contents: buildGeminiContents(body),
-    generationConfig: { temperature: 0.6, maxOutputTokens: 8192 }
-  };
+  return { systemInstruction: { parts: [{ text: systemInstruction }] }, contents: buildGeminiContents(body), generationConfig: { temperature: 0.6, maxOutputTokens: 8192 } };
 }
 
 async function handleGemini(req, res) {
   if (req.method !== 'POST') { res.writeHead(405); res.end('Method Not Allowed'); return true; }
   const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) {
-    res.writeHead(503, { 'Content-Type': 'application/json; charset=utf-8' });
-    res.end(JSON.stringify({ error: 'GEMINI_API_KEY is not configured.' }));
-    return true;
-  }
-  let raw = '';
-  for await (const chunk of req) raw += chunk;
-  let body;
-  try { body = JSON.parse(raw || '{}'); } catch {
-    res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
-    res.end(JSON.stringify({ error: 'Invalid JSON request.' }));
-    return true;
-  }
+  if (!apiKey) { res.writeHead(503, { 'Content-Type': 'application/json; charset=utf-8' }); res.end(JSON.stringify({ error: 'GEMINI_API_KEY is not configured.' })); return true; }
+  let raw = ''; for await (const chunk of req) raw += chunk;
+  let body; try { body = JSON.parse(raw || '{}'); } catch { res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' }); res.end(JSON.stringify({ error: 'Invalid JSON request.' })); return true; }
   const message = typeof body.message === 'string' ? body.message.trim() : '';
-  if (!message) {
-    res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
-    res.end(JSON.stringify({ error: 'Message is required.' }));
-    return true;
-  }
+  if (!message) { res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' }); res.end(JSON.stringify({ error: 'Message is required.' })); return true; }
   try {
-    let search = { context: '', sources: [] };
-    if (body.webSearch === true) search = await tavilyContext(message);
-    const payload = buildPayload(body, search);
-
-    let reply;
-    let modelUsed = 'gemini-3.5-flash-lite';
-    try {
-      reply = await callGemini('gemini-3.5-flash-lite', apiKey, payload);
-    } catch (primaryError) {
-      console.warn('Thinkora Gemini primary model unavailable; trying free-tier fallback:', primaryError.message);
-      reply = await callGemini('gemini-3.1-flash-lite', apiKey, payload);
-      modelUsed = 'gemini-3.1-flash-lite';
-    }
-
-    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-    res.end(JSON.stringify({ reply, sources: search.sources, mode: 'online-gemini', model: modelUsed }));
-  } catch (error) {
-    console.error('Thinkora Gemini error:', error);
-    res.writeHead(502, { 'Content-Type': 'application/json; charset=utf-8' });
-    res.end(JSON.stringify({ error: error.message || 'Gemini request failed.' }));
-  }
+    let search = { context: '', sources: [] }; if (body.webSearch === true) search = await tavilyContext(message);
+    const payload = buildPayload(body, search); let reply, modelUsed = 'gemini-3.5-flash-lite';
+    try { reply = await callGemini('gemini-3.5-flash-lite', apiKey, payload); }
+    catch (primaryError) { console.warn('Thinkora Gemini primary model unavailable; trying free-tier fallback:', primaryError.message); reply = await callGemini('gemini-3.1-flash-lite', apiKey, payload); modelUsed = 'gemini-3.1-flash-lite'; }
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' }); res.end(JSON.stringify({ reply, sources: search.sources, mode: 'online-gemini', model: modelUsed }));
+  } catch (error) { console.error('Thinkora Gemini error:', error); res.writeHead(502, { 'Content-Type': 'application/json; charset=utf-8' }); res.end(JSON.stringify({ error: error.message || 'Gemini request failed.' })); }
   return true;
 }
 
 async function handleGeminiStream(req, res) {
   if (req.method !== 'POST') { res.writeHead(405); res.end('Method Not Allowed'); return true; }
   const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) {
-    res.writeHead(503, { 'Content-Type': 'application/json; charset=utf-8' });
-    res.end(JSON.stringify({ error: 'GEMINI_API_KEY is not configured.' }));
-    return true;
-  }
-  let raw = '';
-  for await (const chunk of req) raw += chunk;
-  let body;
-  try { body = JSON.parse(raw || '{}'); } catch {
-    res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
-    res.end(JSON.stringify({ error: 'Invalid JSON request.' }));
-    return true;
-  }
+  if (!apiKey) { res.writeHead(503, { 'Content-Type': 'application/json; charset=utf-8' }); res.end(JSON.stringify({ error: 'GEMINI_API_KEY is not configured.' })); return true; }
+  let raw = ''; for await (const chunk of req) raw += chunk;
+  let body; try { body = JSON.parse(raw || '{}'); } catch { res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' }); res.end(JSON.stringify({ error: 'Invalid JSON request.' })); return true; }
   const message = typeof body.message === 'string' ? body.message.trim() : '';
-  if (!message) {
-    res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
-    res.end(JSON.stringify({ error: 'Message is required.' }));
-    return true;
-  }
+  if (!message) { res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' }); res.end(JSON.stringify({ error: 'Message is required.' })); return true; }
   try {
-    let search = { context: '', sources: [] };
-    if (body.webSearch === true) search = await tavilyContext(message);
+    let search = { context: '', sources: [] }; if (body.webSearch === true) search = await tavilyContext(message);
     const payload = buildPayload(body, search);
-    res.writeHead(200, {
-      'Content-Type': 'text/event-stream; charset=utf-8',
-      'Cache-Control': 'no-cache, no-transform',
-      'Connection': 'keep-alive',
-      'X-Accel-Buffering': 'no'
-    });
+    res.writeHead(200, { 'Content-Type': 'text/event-stream; charset=utf-8', 'Cache-Control': 'no-cache, no-transform', 'Connection': 'keep-alive', 'X-Accel-Buffering': 'no' });
     if (typeof res.flushHeaders === 'function') res.flushHeaders();
     res.write(`data: ${JSON.stringify({ type: 'start', mode: 'online-gemini' })}\n\n`);
-
     let modelUsed = 'gemini-3.5-flash-lite';
-    try {
-      await callGeminiStream('gemini-3.5-flash-lite', apiKey, payload, res);
-    } catch (primaryError) {
-      console.warn('Thinkora Gemini streaming primary unavailable; trying fallback:', primaryError.message);
-      if (primaryError.streamedText) throw primaryError;
-      await callGeminiStream('gemini-3.1-flash-lite', apiKey, payload, res);
-      modelUsed = 'gemini-3.1-flash-lite';
-    }
-    res.write(`data: ${JSON.stringify({ type: 'done', sources: search.sources, mode: 'online-gemini', model: modelUsed })}\n\n`);
-    res.end();
-  } catch (error) {
-    console.error('Thinkora Gemini streaming error:', error);
-    if (!res.headersSent) {
-      res.writeHead(502, { 'Content-Type': 'application/json; charset=utf-8' });
-      res.end(JSON.stringify({ error: error.message || 'Gemini streaming request failed.' }));
-    } else {
-      res.write(`data: ${JSON.stringify({ type: 'error', error: error.message || 'Gemini streaming request failed.' })}\n\n`);
-      res.end();
-    }
-  }
+    try { await callGeminiStream('gemini-3.5-flash-lite', apiKey, payload, res); }
+    catch (primaryError) { console.warn('Thinkora Gemini streaming primary unavailable; trying fallback:', primaryError.message); if (primaryError.streamedText) throw primaryError; await callGeminiStream('gemini-3.1-flash-lite', apiKey, payload, res); modelUsed = 'gemini-3.1-flash-lite'; }
+    res.write(`data: ${JSON.stringify({ type: 'done', sources: search.sources, mode: 'online-gemini', model: modelUsed })}\n\n`); res.end();
+  } catch (error) { console.error('Thinkora Gemini streaming error:', error); if (!res.headersSent) { res.writeHead(502, { 'Content-Type': 'application/json; charset=utf-8' }); res.end(JSON.stringify({ error: error.message || 'Gemini request failed.' })); } else { res.write(`data: ${JSON.stringify({ type: 'error', error: error.message || 'Gemini request failed.' })}\n\n`); res.end(); } }
   return true;
 }
 
 const proxy = http.createServer((req, res) => {
-  if (req.url === '/offline-mode-integration.js') {
-    res.writeHead(200, { 'Content-Type': 'text/javascript; charset=utf-8', 'Cache-Control': 'no-store' });
-    res.end(integration);
-    return;
-  }
-  if (req.url === '/api/online-chat') {
-    handleGemini(req, res);
-    return;
-  }
-  if (req.url === '/api/online-chat-stream') {
-    handleGeminiStream(req, res);
-    return;
-  }
-
+  if (req.url === '/offline-mode-integration.js') { res.writeHead(200, { 'Content-Type': 'text/javascript; charset=utf-8', 'Cache-Control': 'no-store' }); res.end(integration); return; }
+  if (req.url === '/api/online-chat') { handleGemini(req, res); return; }
+  if (req.url === '/api/online-chat-stream') { handleGeminiStream(req, res); return; }
   const opts = { hostname: '127.0.0.1', port: INTERNAL_PORT, path: req.url, method: req.method, headers: { ...req.headers, host: `127.0.0.1:${INTERNAL_PORT}` } };
   const upstream = http.request(opts, response => {
-    const chunks = [];
-    response.on('data', chunk => chunks.push(chunk));
-    response.on('end', () => {
-      const body = Buffer.concat(chunks);
-      const contentType = String(response.headers['content-type'] || '');
+    const chunks = []; response.on('data', chunk => chunks.push(chunk)); response.on('end', () => {
+      const body = Buffer.concat(chunks); const contentType = String(response.headers['content-type'] || '');
       if ((req.url === '/' || req.url === '/index.html') && contentType.includes('text/html') && !body.includes(Buffer.from('offline-mode-integration.js'))) {
-        const html = body.toString('utf8').replace('</head>', '<script src="/offline-mode-integration.js"></script></head>');
-        const headers = { ...response.headers, 'content-length': Buffer.byteLength(html) };
-        delete headers['content-encoding'];
-        res.writeHead(response.statusCode || 200, headers);
-        res.end(html);
-        return;
+        const html = body.toString('utf8').replace('</head>', '<script src="/offline-mode-integration.js"></script></head>'); const headers = { ...response.headers, 'content-length': Buffer.byteLength(html) }; delete headers['content-encoding']; res.writeHead(response.statusCode || 200, headers); res.end(html); return;
       }
-      res.writeHead(response.statusCode || 200, response.headers);
-      res.end(body);
+      res.writeHead(response.statusCode || 200, response.headers); res.end(body);
     });
   });
   upstream.on('error', err => { res.writeHead(502, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: `Thinkora backend unavailable: ${err.message}` })); });
   req.pipe(upstream);
 });
-
 proxy.listen(PORT, '0.0.0.0', () => console.log(`Thinkora production bootstrap listening on port ${PORT}`));
