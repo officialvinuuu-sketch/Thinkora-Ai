@@ -17,6 +17,7 @@
     }
     return messages;
   }
+
   async function offlineChat(body){
     const controller = new AbortController();
     const timer = setTimeout(()=>controller.abort(), 20000);
@@ -27,6 +28,7 @@
       return new Response(JSON.stringify({reply:d.choices?.[0]?.message?.content||"Offline AI could not generate a response.",sources:[],mode:"offline"}),{status:200,headers:{"Content-Type":"application/json"}});
     } finally { clearTimeout(timer); }
   }
+
   function createStreamBubble(){
     const root=document.getElementById("chatInner");
     if(!root)return null;
@@ -39,6 +41,63 @@
     return {row,text:row.querySelector(".thinkora-streaming-text")};
   }
   function removeStreamBubble(bubble){ if(bubble?.row?.parentNode) bubble.row.parentNode.removeChild(bubble.row); }
+
+  async function consumeSSE(response,bubble,label){
+    if(!response.body)throw new Error(`${label} streaming response has no body.`);
+    const reader=response.body.getReader(),decoder=new TextDecoder();
+    let buffer="",reply="",sources=[],model="";
+    const consume=raw=>{
+      for(const event of raw.split(/\r?\n\r?\n/)){
+        for(const line of event.split(/\r?\n/)){
+          if(!line.startsWith("data:"))continue;
+          const value=line.slice(5).trim();
+          if(!value||value==="[DONE]")continue;
+          let d;try{d=JSON.parse(value)}catch{continue;}
+          if(d.type==="delta"&&typeof d.text==="string"){
+            reply+=d.text;
+            if(bubble?.text){bubble.text.textContent=reply;const chat=document.getElementById("chat");if(chat)chat.scrollTop=chat.scrollHeight;}
+          }else if(d.type==="done"){
+            sources=Array.isArray(d.sources)?d.sources:[];model=d.model||"";
+          }else if(d.type==="error"){
+            const error=new Error(d.error||`${label} streaming failed.`);
+            if(reply)error.streamedText=true;
+            throw error;
+          }
+        }
+      }
+    };
+    while(true){
+      const {value,done}=await reader.read();
+      if(done)break;
+      buffer+=decoder.decode(value,{stream:true});
+      const parts=buffer.split(/\r?\n\r?\n/);
+      buffer=parts.pop()||"";
+      consume(parts.join("\n\n"));
+    }
+    buffer+=decoder.decode();
+    if(buffer)consume(buffer);
+    if(!reply.trim())throw new Error(`${label} returned no text.`);
+    return {reply,sources,model};
+  }
+
+  async function offlineStream(body){
+    const controller = new AbortController();
+    const timer = setTimeout(()=>controller.abort(), 60000);
+    const bubble=createStreamBubble();
+    try{
+      const r=await originalFetch(LOCAL_URL,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({messages:localMessages(body),max_tokens:512,stream:true,chat_template_kwargs:{enable_thinking:false}}),signal:controller.signal});
+      if(!r.ok){
+        const d=await r.json().catch(()=>({}));
+        throw new Error(d.error?.message||d.error||`Offline AI HTTP ${r.status}`);
+      }
+      const result=await consumeSSE(r,bubble,"Offline AI");
+      return new Response(JSON.stringify({reply:result.reply,sources:result.sources,mode:"offline",model:result.model}),{status:200,headers:{"Content-Type":"application/json"}});
+    }catch(e){
+      removeStreamBubble(bubble);
+      throw e;
+    }finally{clearTimeout(timer);}
+  }
+
   async function onlineChat(body,options){
     const controller = new AbortController();
     const timer = setTimeout(()=>controller.abort(), 30000);
@@ -49,49 +108,22 @@
         const d = await r.json().catch(()=>({}));
         throw new Error(d.error || `Smart Online HTTP ${r.status}`);
       }
-      if(!r.body)throw new Error("Smart Online streaming response has no body.");
-      const reader=r.body.getReader(),decoder=new TextDecoder();
-      let buffer="",reply="",sources=[],model="";
-      const consume=raw=>{
-        for(const event of raw.split(/\r?\n\r?\n/)){
-          for(const line of event.split(/\r?\n/)){
-            if(!line.startsWith("data:"))continue;
-            const value=line.slice(5).trim();
-            if(!value||value==="[DONE]")continue;
-            let d;try{d=JSON.parse(value)}catch{continue;}
-            if(d.type==="delta"&&typeof d.text==="string"){
-              reply+=d.text;
-              if(bubble?.text){bubble.text.textContent=reply;const chat=document.getElementById("chat");if(chat)chat.scrollTop=chat.scrollHeight;}
-            }else if(d.type==="done"){
-              sources=Array.isArray(d.sources)?d.sources:[];model=d.model||"";
-            }else if(d.type==="error")throw new Error(d.error||"Smart Online streaming failed.");
-          }
-        }
-      };
-      while(true){
-        const {value,done}=await reader.read();
-        if(done)break;
-        buffer+=decoder.decode(value,{stream:true});
-        const parts=buffer.split(/\r?\n\r?\n/);
-        buffer=parts.pop()||"";
-        consume(parts.join("\n\n"));
-      }
-      buffer+=decoder.decode();
-      if(buffer)consume(buffer);
-      if(!reply.trim())throw new Error("Smart Online returned no text.");
-      return new Response(JSON.stringify({reply,sources,mode:"online-gemini",model}),{status:200,headers:{"Content-Type":"application/json"}});
+      const result=await consumeSSE(r,bubble,"Smart Online");
+      return new Response(JSON.stringify({reply:result.reply,sources:result.sources,mode:"online-gemini",model:result.model}),{status:200,headers:{"Content-Type":"application/json"}});
     }catch(e){
       removeStreamBubble(bubble);
       throw e;
     }finally{clearTimeout(timer);}
   }
+
   async function routeChat(body,options){
-    if(mode === "offline") return offlineChat(body);
+    if(mode === "offline") return offlineStream(body);
     if(mode === "online") return onlineChat(body,options);
     try{
       return await onlineChat(body,options);
     }catch(e){
-      return offlineChat(body);
+      if(e?.streamedText)throw e;
+      return offlineStream(body);
     }
   }
   window.fetch=function(resource,options){
