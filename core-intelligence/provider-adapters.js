@@ -2,7 +2,7 @@
 // Adapters receive the normalized router request and delegate transport to injected functions.
 // No provider credential is stored here.
 
-function createOnlineAdapter({ execute, stream } = {}) {
+function createOnlineAdapter({ execute } = {}) {
   if (typeof execute !== 'function') throw new TypeError('Online adapter requires execute().');
   return async function onlineAdapter(request, provider) {
     const result = await execute(request, provider);
@@ -26,8 +26,17 @@ function createOfflineAdapter({ execute } = {}) {
   };
 }
 
+function createOfflineStreamAdapter({ stream } = {}) {
+  if (typeof stream !== 'function') throw new TypeError('Offline stream adapter requires stream().');
+  return async function offlineStreamAdapter(request, provider) {
+    const result = await stream(request, provider);
+    return { ...(result || {}), provider, streamed: true };
+  };
+}
+
 module.exports = {
   createOnlineAdapter,
   createOnlineStreamAdapter,
-  createOfflineAdapter
+  createOfflineAdapter,
+  createOfflineStreamAdapter
 };
