@@ -1,5 +1,5 @@
 (function(){
-  const LOCAL_URL = "http://127.0.0.1:8080/v1/chat/completions";
+  const LOCAL_URL = "http://127.0.0.1:8081/v1/chat/completions";
   const ONLINE_URL = "/api/online-chat-stream";
   const KEY = "thinkoraModelMode";
   const originalFetch = window.fetch.bind(window);
