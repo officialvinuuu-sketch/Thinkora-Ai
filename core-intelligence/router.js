@@ -5,7 +5,7 @@
 const { PROVIDERS, normalizeMode } = require('./config');
 const { shouldFallbackToOffline } = require('./provider-policy');
 
-const ROUTER_VERSION = '1.2.0';
+const ROUTER_VERSION = '1.3.0';
 
 function normalizeRequest(input = {}) {
   const messages = Array.isArray(input.messages)
@@ -63,11 +63,9 @@ async function execute(input, adapters = {}) {
     const result = await primaryAdapter(request, primaryProvider);
     return createResult({ ...(result || {}), provider: primaryProvider });
   } catch (primaryError) {
-    // Explicit Online must not silently switch providers. Auto may fall back.
     if (request.mode !== 'auto' || primaryProvider.id !== PROVIDERS.online.id || !shouldFallbackToOffline(primaryError)) {
       throw primaryError;
     }
-    // Never splice a second provider into an already-started stream.
     if (primaryError?.streamedText) throw primaryError;
 
     const offlineProvider = PROVIDERS.offline;
@@ -83,10 +81,41 @@ async function execute(input, adapters = {}) {
   }
 }
 
+// Streaming follows the same Auto policy. The streaming adapter must mark
+// streamedText=true when any output has already reached the client so the
+// router never splices Offline output into a partial Online response.
+async function executeStream(input, adapters = {}) {
+  const request = normalizeRequest(input);
+  const primaryProvider = chooseProvider(request);
+  const primaryAdapter = getAdapter(adapters, primaryProvider);
+
+  try {
+    const result = await primaryAdapter(request, primaryProvider);
+    return createResult({ ...(result || {}), provider: primaryProvider, streamed: true });
+  } catch (primaryError) {
+    if (request.mode !== 'auto' || primaryProvider.id !== PROVIDERS.online.id || !shouldFallbackToOffline(primaryError)) {
+      throw primaryError;
+    }
+    if (primaryError?.streamedText) throw primaryError;
+
+    const offlineProvider = PROVIDERS.offline;
+    const offlineAdapter = getAdapter(adapters, offlineProvider);
+    try {
+      const result = await offlineAdapter(request, offlineProvider);
+      return createResult({ ...(result || {}), provider: offlineProvider, fallback: true, streamed: true });
+    } catch (offlineError) {
+      offlineError.code = offlineError.code || 'OFFLINE_STREAM_FALLBACK_FAILED';
+      offlineError.primaryError = primaryError;
+      throw offlineError;
+    }
+  }
+}
+
 module.exports = {
   ROUTER_VERSION,
   normalizeRequest,
   chooseProvider,
   createResult,
-  execute
+  execute,
+  executeStream
 };
