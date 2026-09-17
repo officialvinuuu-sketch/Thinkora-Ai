@@ -18,11 +18,19 @@
     return messages;
   }
 
+  const localFetchOptions = body => ({
+    method:"POST",
+    mode:"cors",
+    targetAddressSpace:"loopback",
+    headers:{"Content-Type":"application/json"},
+    body:JSON.stringify(body)
+  });
+
   async function offlineChat(body){
     const controller = new AbortController();
     const timer = setTimeout(()=>controller.abort(), 20000);
     try{
-      const r = await originalFetch(LOCAL_URL,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({messages:localMessages(body),max_tokens:512,chat_template_kwargs:{enable_thinking:false}}),signal:controller.signal});
+      const r = await originalFetch(LOCAL_URL,{...localFetchOptions({messages:localMessages(body),max_tokens:512,chat_template_kwargs:{enable_thinking:false}}),signal:controller.signal});
       const d = await r.json().catch(()=>({}));
       if(!r.ok) throw new Error(d.error?.message || d.error || `Offline AI HTTP ${r.status}`);
       return new Response(JSON.stringify({reply:d.choices?.[0]?.message?.content||"Offline AI could not generate a response.",sources:[],mode:"offline"}),{status:200,headers:{"Content-Type":"application/json"}});
@@ -85,7 +93,7 @@
     const timer = setTimeout(()=>controller.abort(), 60000);
     const bubble=createStreamBubble();
     try{
-      const r=await originalFetch(LOCAL_URL,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({messages:localMessages(body),max_tokens:512,stream:true,chat_template_kwargs:{enable_thinking:false}}),signal:controller.signal});
+      const r=await originalFetch(LOCAL_URL,{...localFetchOptions({messages:localMessages(body),max_tokens:512,stream:true,chat_template_kwargs:{enable_thinking:false}}),signal:controller.signal});
       if(!r.ok){
         const d=await r.json().catch(()=>({}));
         throw new Error(d.error?.message||d.error||`Offline AI HTTP ${r.status}`);
@@ -135,7 +143,7 @@
   };
   function install(){
     if(document.getElementById("thinkoraModelRow"))return;
-    const style=document.createElement("style");style.id="thinkoraOfflineStyle";style.textContent='.thinkora-model-row{display:flex;align-items:center;gap:7px;padding:8px 10px;border-bottom:1px solid #303030;background:#171717;overflow-x:auto;scrollbar-width:none}.thinkora-model-row::-webkit-scrollbar{display:none}.thinkora-model-label{font-size:11px;color:#888;white-space:nowrap}.thinkora-model-btn{border:1px solid #444;background:#292929;color:#aaa;border-radius:9px;padding:7px 11px;font-size:12px;white-space:nowrap}.thinkora-model-btn.active{background:#fff;color:#111;border-color:#fff}.thinkora-mode-badge{font-size:11px;color:#777;white-space:nowrap}.thinkora-streaming-text{white-space:pre-wrap}@media(max-width:800px){.thinkora-model-row{padding:7px 9px}.thinkora-model-label,.thinkora-mode-badge{display:none}}';document.head.appendChild(style);
+    const style=document.createElement("style");style.id="thinkoraOfflineStyle";style.textContent='.thinkora-model-row{display:flex;align-items:center;gap:7px;padding:8px 10px;border-bottom:1px solid #303030;background:#171717;overflow-x:auto;scrollbar-width:none}.thinkora-model-row::-webkit-scrollbar{display:none}.thinkora-model-label{font-size:11px;color:#888;white-space:nowrap}.thinkora-model-btn{border:1px solid #444;background:#292929;color:#aaa;border-radius:9px;padding:7px 11px;font-size:12px;white-space:nowrap}.thinkora-model-btn.active{background:#fff;color:#111;border-color:#fff}.thinkora-mode-badge{font-size:11px;color:#777;white-space:nowrap}@media(max-width:800px){.thinkora-model-row{padding:7px 9px}.thinkora-model-label,.thinkora-mode-badge{display:none}}';document.head.appendChild(style);
     const topbar=document.querySelector('.topbar');if(!topbar)return;
     const row=document.createElement('div');row.className='thinkora-model-row';row.id='thinkoraModelRow';row.innerHTML='<span class="thinkora-model-label">AI Mode</span><button class="thinkora-model-btn" data-mode="online">Smart Online</button><button class="thinkora-model-btn" data-mode="offline">Offline AI</button><button class="thinkora-model-btn" data-mode="auto">Auto</button><span class="thinkora-mode-badge" id="thinkoraModeBadge"></span>';topbar.parentNode.insertBefore(row,topbar.nextSibling);
     row.querySelectorAll('[data-mode]').forEach(btn=>btn.addEventListener('click',()=>{mode=btn.dataset.mode;localStorage.setItem(KEY,mode);renderMode();}));renderMode();
