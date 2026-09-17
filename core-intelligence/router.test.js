@@ -44,6 +44,31 @@ const { normalizeRequest, chooseProvider, createResult, execute, ROUTER_VERSION 
   assert.equal(offline.provider, PROVIDERS.offline.id);
   assert.equal(offline.mode, 'offline');
 
+  const autoFallback = await execute({ message: 'auto fallback', mode: 'auto' }, {
+    [PROVIDERS.online.id]: async () => {
+      const error = new Error('temporary online outage');
+      error.status = 503;
+      throw error;
+    },
+    [PROVIDERS.offline.id]: async () => ({ reply: 'offline fallback ok', model: 'test-offline' })
+  });
+  assert.equal(autoFallback.reply, 'offline fallback ok');
+  assert.equal(autoFallback.provider, PROVIDERS.offline.id);
+  assert.equal(autoFallback.mode, 'offline');
+  assert.equal(autoFallback.fallback, true);
+
+  await assert.rejects(
+    execute({ message: 'stream already started', mode: 'auto' }, {
+      [PROVIDERS.online.id]: async () => {
+        const error = new Error('stream interrupted');
+        error.streamedText = true;
+        throw error;
+      },
+      [PROVIDERS.offline.id]: async () => ({ reply: 'must not be used' })
+    }),
+    error => error.streamedText === true
+  );
+
   await assert.rejects(
     execute({ message: 'missing adapter', mode: 'offline' }, {}),
     error => error.code === 'PROVIDER_ADAPTER_UNAVAILABLE' && error.status === 503
