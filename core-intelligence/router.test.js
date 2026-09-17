@@ -1,6 +1,6 @@
 const assert = require('assert');
 const { PROVIDERS } = require('./config');
-const { normalizeRequest, chooseProvider, createResult, execute, ROUTER_VERSION } = require('./router');
+const { normalizeRequest, chooseProvider, createResult, execute, executeStream, ROUTER_VERSION } = require('./router');
 
 (async () => {
   const request = normalizeRequest({
@@ -57,8 +57,28 @@ const { normalizeRequest, chooseProvider, createResult, execute, ROUTER_VERSION 
   assert.equal(autoFallback.mode, 'offline');
   assert.equal(autoFallback.fallback, true);
 
+  const streamedOnline = await executeStream({ message: 'stream online', mode: 'online' }, {
+    [PROVIDERS.online.id]: async () => ({ model: 'test-online-stream' })
+  });
+  assert.equal(streamedOnline.provider, PROVIDERS.online.id);
+  assert.equal(streamedOnline.streamed, true);
+  assert.equal(streamedOnline.fallback, false);
+
+  const streamedFallback = await executeStream({ message: 'stream fallback', mode: 'auto' }, {
+    [PROVIDERS.online.id]: async () => {
+      const error = new Error('stream outage before output');
+      error.status = 503;
+      throw error;
+    },
+    [PROVIDERS.offline.id]: async () => ({ model: 'test-offline-stream', reply: 'offline stream ok' })
+  });
+  assert.equal(streamedFallback.provider, PROVIDERS.offline.id);
+  assert.equal(streamedFallback.mode, 'offline');
+  assert.equal(streamedFallback.fallback, true);
+  assert.equal(streamedFallback.streamed, true);
+
   await assert.rejects(
-    execute({ message: 'stream already started', mode: 'auto' }, {
+    executeStream({ message: 'stream already started', mode: 'auto' }, {
       [PROVIDERS.online.id]: async () => {
         const error = new Error('stream interrupted');
         error.streamedText = true;
