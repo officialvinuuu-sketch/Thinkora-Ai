@@ -1,10 +1,11 @@
-// Thinkora Core — Universal AI Router runtime foundation.
+// Thinkora Core — Universal AI Router runtime.
 // One normalized request enters the router; provider adapters execute it.
 // Adapters stay outside this module so provider credentials and transport remain isolated.
 
 const { PROVIDERS, normalizeMode } = require('./config');
+const { shouldFallbackToOffline } = require('./provider-policy');
 
-const ROUTER_VERSION = '1.1.0';
+const ROUTER_VERSION = '1.2.0';
 
 function normalizeRequest(input = {}) {
   const messages = Array.isArray(input.messages)
@@ -25,8 +26,6 @@ function normalizeRequest(input = {}) {
 
 function chooseProvider(request) {
   if (request.mode === 'offline') return PROVIDERS.offline;
-  // Auto and explicit Online currently use the production Gemini adapter.
-  // More online providers can be added here without changing the request contract.
   return PROVIDERS.online;
 }
 
@@ -44,9 +43,7 @@ function createResult({ reply = '', provider = null, model = '', sources = [], s
   });
 }
 
-async function execute(input, adapters = {}) {
-  const request = normalizeRequest(input);
-  const provider = chooseProvider(request);
+function getAdapter(adapters, provider) {
   const adapter = adapters[provider.id];
   if (typeof adapter !== 'function') {
     const error = new Error(`No adapter configured for provider: ${provider.id}`);
@@ -54,9 +51,36 @@ async function execute(input, adapters = {}) {
     error.status = 503;
     throw error;
   }
+  return adapter;
+}
 
-  const result = await adapter(request, provider);
-  return createResult({ ...(result || {}), provider });
+async function execute(input, adapters = {}) {
+  const request = normalizeRequest(input);
+  const primaryProvider = chooseProvider(request);
+  const primaryAdapter = getAdapter(adapters, primaryProvider);
+
+  try {
+    const result = await primaryAdapter(request, primaryProvider);
+    return createResult({ ...(result || {}), provider: primaryProvider });
+  } catch (primaryError) {
+    // Explicit Online must not silently switch providers. Auto may fall back.
+    if (request.mode !== 'auto' || primaryProvider.id !== PROVIDERS.online.id || !shouldFallbackToOffline(primaryError)) {
+      throw primaryError;
+    }
+    // Never splice a second provider into an already-started stream.
+    if (primaryError?.streamedText) throw primaryError;
+
+    const offlineProvider = PROVIDERS.offline;
+    const offlineAdapter = getAdapter(adapters, offlineProvider);
+    try {
+      const result = await offlineAdapter(request, offlineProvider);
+      return createResult({ ...(result || {}), provider: offlineProvider, fallback: true });
+    } catch (offlineError) {
+      offlineError.code = offlineError.code || 'OFFLINE_FALLBACK_FAILED';
+      offlineError.primaryError = primaryError;
+      throw offlineError;
+    }
+  }
 }
 
 module.exports = {
