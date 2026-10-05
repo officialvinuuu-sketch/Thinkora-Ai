@@ -8,7 +8,7 @@ const PROVIDERS = Object.freeze({
   offline: Object.freeze({
     id: 'llama-local',
     label: 'Offline AI',
-    endpoint: 'http://127.0.0.1:8080/v1/chat/completions',
+    endpoint: 'http://127.0.0.1:8081/v1/chat/completions',
     credential: null
   })
 });
