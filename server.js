@@ -10,10 +10,19 @@ const PORT = process.env.PORT || 10000;
 app.use(express.json({ limit: "2mb" }));
 app.use(express.static(__dirname, { index: false }));
 
-const hf = new OpenAI({
-  baseURL: "https://router.huggingface.co/v1",
-  apiKey: process.env.HF_TOKEN
-});
+let hf;
+function getHFClient() {
+  if (!process.env.HF_TOKEN) {
+    throw new Error("HF_TOKEN is not configured");
+  }
+  if (!hf) {
+    hf = new OpenAI({
+      baseURL: "https://router.huggingface.co/v1",
+      apiKey: process.env.HF_TOKEN
+    });
+  }
+  return hf;
+}
 
 let pdfjsPromise;
 async function getPdfJs() {
@@ -71,7 +80,7 @@ async function extractScannedPdfText(buffer, originalName) {
     await page.render({ canvasContext: context, viewport }).promise;
     const imageData = canvas.toDataURL("image/jpeg", 0.82);
 
-    const completion = await hf.chat.completions.create({
+    const completion = await getHFClient().chat.completions.create({
       model: "zai-org/GLM-4.5V:fastest",
       messages: [
         {
@@ -168,7 +177,7 @@ app.post("/api/vision", imageUpload.single("image"), async (req, res) => {
   const prompt = typeof req.body?.prompt === "string" && req.body.prompt.trim() ? req.body.prompt.trim().slice(0, 4000) : "Describe this image clearly and tell me the important details you can see.";
   try {
     const dataUrl = `data:${req.file.mimetype};base64,${req.file.buffer.toString("base64")}`;
-    const completion = await hf.chat.completions.create({
+    const completion = await getHFClient().chat.completions.create({
       model: "zai-org/GLM-4.5V:fastest",
       messages: [
         { role: "system", content: "You are Thinkora AI with vision. You can inspect the supplied image. Carefully answer the user's question about the image. Describe visible objects, people, text, layout, colors and other relevant details. Never say you cannot view the image when an image is supplied. If something is genuinely unreadable or uncertain, say exactly what is unclear." },
@@ -215,7 +224,7 @@ app.post("/api/chat", async (req, res) => {
       ...(webContext ? [{ role: "system", content: `The user explicitly enabled Web Search. Today's date in India is ${searchMeta.date}. Use ONLY the supplied Web Search Results as evidence for web-search claims. This is a source-grounded task: do not invent, reconstruct, paraphrase into a new headline, or guess a publication date that is not supported by a supplied source. For a headline/news request, each headline MUST be directly supported by one of the supplied source TITLEs or SNIPPETs. If fewer than five sources support five distinct headlines, provide only the supported number and say that fewer verified results were available. Never create a placeholder or generic source name such as "Daily News". Never invent or guess a URL. If the user asks for an exact source URL, copy the URL exactly from the matching supplied source. For questions containing today, latest, current, recent, now, or news, do not relabel an older article as today's information. If today's results are unavailable, state that clearly. Prefer the freshest relevant evidence, distinguish facts from uncertainty, and do not invent details.\n${webContext}` }] : []),
       { role: "user", content: message }
     ];
-    const completion = await hf.chat.completions.create({ model: "openai/gpt-oss-120b:fastest", messages, max_tokens: 1600 });
+    const completion = await getHFClient().chat.completions.create({ model: "openai/gpt-oss-120b:fastest", messages, max_tokens: 1600 });
     res.json({ reply: completion.choices?.[0]?.message?.content || "I could not generate a response.", sources });
   } catch (error) {
     console.error("Thinkora AI error:", error);
