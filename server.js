@@ -193,12 +193,29 @@ app.post("/api/online-chat-stream", async (req, res) => {
   const history = Array.isArray(req.body?.messages) ? req.body.messages : [];
   const fileContext = typeof req.body?.fileContext === "string" ? req.body.fileContext.slice(0, 80000) : "";
   const fileName = typeof req.body?.fileName === "string" ? req.body.fileName.slice(0, 200) : "";
+  const webSearch = req.body?.webSearch === true;
   if (!message) return res.status(400).json({ error: "Message is required." });
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) return res.status(503).json({ error: "Smart Online is not configured right now." });
   try {
+    let webContext = "";
+    let sources = [];
+    let searchMeta = null;
+    if (webSearch) {
+      const search = await tavilySearch(message);
+      searchMeta = search;
+      sources = search.results.map(r => ({ title: r.title || "Web result", url: r.url || "", content: (r.content || "").slice(0, 2500) })).filter(r => r.url);
+      webContext = sources.length
+        ? "\n\nWEB SEARCH RESULTS (retrieved for India date " + search.date + "; use these sources when relevant):\n" + sources.map((r, i) => "[SOURCE " + (i + 1) + "]\nTITLE: " + r.title + "\nURL: " + r.url + "\nSNIPPET: " + r.content).join("\n\n")
+        : "\n\nWEB SEARCH RESULTS: No useful results were returned for India date " + search.date + ". If the user asked for current information, say that current results were unavailable.";
+    }
+    const searchInstruction = webContext
+      ? { text: "The user explicitly enabled Web Search. Use ONLY the supplied Web Search Results as evidence for web-search claims. Do not invent facts, titles, dates, source names, or URLs. If fewer results support the answer, provide only supported information.\n" + webContext }
+      : null;
     const contents = history.filter(m => m && (m.role === "user" || m.role === "assistant") && typeof m.content === "string").slice(-40).map(m => ({ role: m.role === "assistant" ? "model" : "user", parts: [{ text: m.content.slice(0, 20000) }] }));
-    contents.push({ role: "user", parts: [{ text: message + (fileContext ? "\n\nDOCUMENT (" + (fileName || "uploaded file") + "):\n" + fileContext : "") }] });
+    const userParts = [{ text: message + (fileContext ? "\n\nDOCUMENT (" + (fileName || "uploaded file") + "):\n" + fileContext : "") }];
+    if (searchInstruction) userParts.push(searchInstruction);
+    contents.push({ role: "user", parts: userParts });
     const upstream = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:streamGenerateContent?alt=sse&key=" + encodeURIComponent(apiKey), { method: "POST", headers: { "Content-Type": "application/json", "Accept": "text/event-stream" }, body: JSON.stringify({ systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] }, contents, generationConfig: { maxOutputTokens: 1600 } }) });
     if (!upstream.ok) { const body = await upstream.text().catch(() => ""); const error = new Error("Gemini HTTP " + upstream.status + (body ? ": " + body.slice(0, 500) : "")); error.status = upstream.status; throw error; }
     if (!upstream.body) { const error = new Error("Gemini returned no streaming body"); error.status = 502; throw error; }
@@ -216,7 +233,7 @@ app.post("/api/online-chat-stream", async (req, res) => {
     };
     while (true) { const { value, done } = await reader.read(); if (done) break; buffer += decoder.decode(value, { stream: true }); const events = buffer.split(/\r?\n\r?\n/); buffer = events.pop() || ""; events.forEach(processEvent); }
     buffer += decoder.decode(); if (buffer.trim()) processEvent(buffer);
-    send({ type: "done", model: "gemini-2.5-flash", sources: [] });
+    send({ type: "done", model: "gemini-2.5-flash", sources });
     res.end();
   } catch (error) {
     console.error("Thinkora online streaming error:", error);
