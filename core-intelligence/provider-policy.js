@@ -8,7 +8,7 @@ function shouldFallbackToOffline(error) {
   if (!error) return true;
   if (error.name === 'AbortError') return true;
   if (isTransientError(error)) return true;
-  return true;
+  return false;
 }
 
 module.exports = { TRANSIENT_HTTP, isTransientError, shouldFallbackToOffline };
