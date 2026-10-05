@@ -4,6 +4,10 @@
   const KEY = "thinkoraModelMode";
   const originalFetch = window.fetch.bind(window);
   let mode = localStorage.getItem(KEY) || "auto";
+  let activeStreamController = null;
+  let activeStreamState = null;
+  window.thinkoraCancelStream = function(){ if(activeStreamController){ activeStreamState && (activeStreamState.cancelled=true); activeStreamController.abort(); return true; } return false; };
+  window.thinkoraGetStreamingState = function(){ return activeStreamState || {reply:"",cancelled:false}; };
 
   function localMessages(body){
     const history = Array.isArray(body.messages) ? body.messages : [];
@@ -54,6 +58,7 @@
     if(!response.body)throw new Error(`${label} streaming response has no body.`);
     const reader=response.body.getReader(),decoder=new TextDecoder();
     let buffer="",reply="",sources=[],model="";
+    if(activeStreamState) activeStreamState.reply="";
     const consume=raw=>{
       for(const event of raw.split(/\r?\n\r?\n/)){
         for(const line of event.split(/\r?\n/)){
@@ -63,6 +68,7 @@
           let d;try{d=JSON.parse(value)}catch{continue;}
           if(d.type==="delta"&&typeof d.text==="string"){
             reply+=d.text;
+            if(activeStreamState) activeStreamState.reply=reply;
             if(bubble?.text){bubble.text.textContent=reply;const chat=document.getElementById("chat");if(chat)chat.scrollTop=chat.scrollHeight;}
           }else if(d.type==="done"){
             sources=Array.isArray(d.sources)?d.sources:[];model=d.model||"";
@@ -95,6 +101,8 @@
 
   async function offlineStream(body){
     const controller = new AbortController();
+    activeStreamController = controller;
+    activeStreamState = {reply:"",cancelled:false};
     const timer = setTimeout(()=>controller.abort(), 60000);
     const bubble=createStreamBubble();
     try{
@@ -108,11 +116,13 @@
     }catch(e){
       removeStreamBubble(bubble);
       throw e;
-    }finally{clearTimeout(timer);}
+    }finally{clearTimeout(timer); if(activeStreamController===controller){activeStreamController=null;activeStreamState=null;}}
   }
 
   async function onlineChat(body,options){
     const controller = new AbortController();
+    activeStreamController = controller;
+    activeStreamState = {reply:"",cancelled:false};
     const timer = setTimeout(()=>controller.abort(), 30000);
     const bubble=createStreamBubble();
     try{
@@ -126,7 +136,7 @@
     }catch(e){
       removeStreamBubble(bubble);
       throw e;
-    }finally{clearTimeout(timer);}
+    }finally{clearTimeout(timer); if(activeStreamController===controller){activeStreamController=null;activeStreamState=null;}}
   }
 
   async function routeChat(body,options){
