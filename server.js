@@ -188,6 +188,42 @@ app.post("/api/vision", imageUpload.single("image"), async (req, res) => {
   }
 });
 
+app.post("/api/online-chat-stream", async (req, res) => {
+  const message = typeof req.body?.message === "string" ? req.body.message.trim() : "";
+  const history = Array.isArray(req.body?.messages) ? req.body.messages : [];
+  const fileContext = typeof req.body?.fileContext === "string" ? req.body.fileContext.slice(0, 80000) : "";
+  const fileName = typeof req.body?.fileName === "string" ? req.body.fileName.slice(0, 200) : "";
+  if (!message) return res.status(400).json({ error: "Message is required." });
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) return res.status(503).json({ error: "Smart Online is not configured right now." });
+  try {
+    const contents = history.filter(m => m && (m.role === "user" || m.role === "assistant") && typeof m.content === "string").slice(-40).map(m => ({ role: m.role === "assistant" ? "model" : "user", parts: [{ text: m.content.slice(0, 20000) }] }));
+    contents.push({ role: "user", parts: [{ text: message + (fileContext ? "\n\nDOCUMENT (" + (fileName || "uploaded file") + "):\n" + fileContext : "") }] });
+    const upstream = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:streamGenerateContent?alt=sse&key=" + encodeURIComponent(apiKey), { method: "POST", headers: { "Content-Type": "application/json", "Accept": "text/event-stream" }, body: JSON.stringify({ systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] }, contents, generationConfig: { maxOutputTokens: 1600 } }) });
+    if (!upstream.ok) { const body = await upstream.text().catch(() => ""); const error = new Error("Gemini HTTP " + upstream.status + (body ? ": " + body.slice(0, 500) : "")); error.status = upstream.status; throw error; }
+    if (!upstream.body) { const error = new Error("Gemini returned no streaming body"); error.status = 502; throw error; }
+    res.status(200).set({ "Content-Type": "text/event-stream; charset=utf-8", "Cache-Control": "no-cache, no-transform", "Connection": "keep-alive", "X-Accel-Buffering": "no" });
+    if (typeof res.flushHeaders === "function") res.flushHeaders();
+    const reader = upstream.body.getReader(), decoder = new TextDecoder();
+    let buffer = "";
+    const send = payload => res.write("data: " + JSON.stringify(payload) + "\n\n");
+    const processEvent = event => {
+      const data = event.split(/\r?\n/).filter(line => line.startsWith("data:")).map(line => line.slice(5).trim()).join("");
+      if (!data || data === "[DONE]") return;
+      let parsed; try { parsed = JSON.parse(data); } catch (_) { return; }
+      const text = parsed?.candidates?.[0]?.content?.parts?.map(part => typeof part.text === "string" ? part.text : "").join("") || "";
+      if (text) send({ type: "delta", text });
+    };
+    while (true) { const { value, done } = await reader.read(); if (done) break; buffer += decoder.decode(value, { stream: true }); const events = buffer.split(/\r?\n\r?\n/); buffer = events.pop() || ""; events.forEach(processEvent); }
+    buffer += decoder.decode(); if (buffer.trim()) processEvent(buffer);
+    send({ type: "done", model: "gemini-2.5-flash", sources: [] });
+    res.end();
+  } catch (error) {
+    console.error("Thinkora online streaming error:", error);
+    if (!res.headersSent) return res.status(Number(error?.status) >= 400 && Number(error.status) < 600 ? Number(error.status) : 502).json({ error: "Smart Online could not process your request right now." });
+    try { res.write("data: " + JSON.stringify({ type: "error", error: "Smart Online streaming interrupted." }) + "\n\n"); res.end(); } catch (_) {}
+  }
+});
 app.post("/api/chat", async (req, res) => {
   const message = typeof req.body?.message === "string" ? req.body.message.trim() : "";
   const history = Array.isArray(req.body?.messages) ? req.body.messages : [];
