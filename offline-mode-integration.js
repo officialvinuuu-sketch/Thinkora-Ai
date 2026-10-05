@@ -9,6 +9,7 @@
   let lastStreamState = {reply:"",cancelled:false};
   window.thinkoraCancelStream = function(){ if(activeStreamController){ activeStreamState && (activeStreamState.cancelled=true); activeStreamController.abort(); return true; } return false; };
   window.thinkoraGetStreamingState = function(){ return activeStreamState || lastStreamState; };
+  window.thinkoraResetStreamState = function(){ lastStreamState={reply:"",cancelled:false}; };
 
   function localMessages(body){
     const history = Array.isArray(body.messages) ? body.messages : [];
