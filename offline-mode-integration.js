@@ -6,8 +6,9 @@
   let mode = localStorage.getItem(KEY) || "auto";
   let activeStreamController = null;
   let activeStreamState = null;
+  let lastStreamState = {reply:"",cancelled:false};
   window.thinkoraCancelStream = function(){ if(activeStreamController){ activeStreamState && (activeStreamState.cancelled=true); activeStreamController.abort(); return true; } return false; };
-  window.thinkoraGetStreamingState = function(){ return activeStreamState || {reply:"",cancelled:false}; };
+  window.thinkoraGetStreamingState = function(){ return activeStreamState || lastStreamState; };
 
   function localMessages(body){
     const history = Array.isArray(body.messages) ? body.messages : [];
@@ -103,6 +104,7 @@
     const controller = new AbortController();
     activeStreamController = controller;
     activeStreamState = {reply:"",cancelled:false};
+    lastStreamState = activeStreamState;
     const timer = setTimeout(()=>controller.abort(), 60000);
     const bubble=createStreamBubble();
     try{
