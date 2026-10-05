@@ -44,6 +44,20 @@ const { normalizeRequest, chooseProvider, createResult, execute, executeStream, 
   assert.equal(offline.provider, PROVIDERS.offline.id);
   assert.equal(offline.mode, 'offline');
 
+  for (const status of [400, 401, 403]) {
+    await assert.rejects(
+      execute({ message: 'permanent failure', mode: 'auto' }, {
+        [PROVIDERS.online.id]: async () => {
+          const error = new Error('permanent online failure');
+          error.status = status;
+          throw error;
+        },
+        [PROVIDERS.offline.id]: async () => ({ reply: 'must not fallback' })
+      }),
+      error => error.status === status
+    );
+  }
+
   const autoFallback = await execute({ message: 'auto fallback', mode: 'auto' }, {
     [PROVIDERS.online.id]: async () => {
       const error = new Error('temporary online outage');
