@@ -74,18 +74,23 @@
         }
       }
     };
-    while(true){
-      const {value,done}=await reader.read();
-      if(done)break;
-      buffer+=decoder.decode(value,{stream:true});
-      const parts=buffer.split(/\r?\n\r?\n/);
-      buffer=parts.pop()||"";
-      consume(parts.join("\n\n"));
+    try{
+      while(true){
+        const {value,done}=await reader.read();
+        if(done)break;
+        buffer+=decoder.decode(value,{stream:true});
+        const parts=buffer.split(/\r?\n\r?\n/);
+        buffer=parts.pop()||"";
+        consume(parts.join("\n\n"));
+      }
+      buffer+=decoder.decode();
+      if(buffer)consume(buffer);
+      if(!reply.trim())throw new Error(`${label} returned no text.`);
+      return {reply,sources,model};
+    }catch(error){
+      if(reply.trim())error.streamedText=true;
+      throw error;
     }
-    buffer+=decoder.decode();
-    if(buffer)consume(buffer);
-    if(!reply.trim())throw new Error(`${label} returned no text.`);
-    return {reply,sources,model};
   }
 
   async function offlineStream(body){
